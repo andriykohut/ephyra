@@ -7,3 +7,5 @@
 *.db-shm
 /dist
 .DS_Store
+/.playwright-mcp
+*.png

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/andrii/ephyra/internal/config"
@@ -50,6 +51,11 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
+	// unknown /api/* paths are 404 JSON, never the SPA shell
+	if strings.HasPrefix(r.URL.Path, "/api/") {
+		writeError(w, http.StatusNotFound, "not_found", "no such endpoint")
+		return
+	}
 	if s.static != nil && r.Method == http.MethodGet {
 		s.static.ServeHTTP(w, r)
 		return
