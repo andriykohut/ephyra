@@ -59,7 +59,8 @@ SELECT
   COALESCE(i.Genres, ''),
   COALESCE(f.lib, 'Unknown'),
   COALESCE(i.Path, ''),
-  v.codec, v.width, v.color_transfer, v.dv_profile
+  v.codec, v.width, v.color_transfer, v.dv_profile,
+  i.Id, COALESCE(i.SeriesId, ''), COALESCE(i.SeriesName, '')
 FROM BaseItems i
 LEFT JOIN pvs v     ON v.ItemId = i.Id AND v.rn = 1
 LEFT JOIN folders f ON f.fid = i.TopParentId
@@ -67,6 +68,46 @@ WHERE i.Type IN (?, ?)
   AND COALESCE(i.IsVirtualItem, 0) = 0
   AND COALESCE(i.IsFolder, 0) = 0
 `
+
+// playedStateQuery rolls UserData to one row per item: played by anyone,
+// summed play count (per-user MAX first, so duplicate CustomDataKey rows don't
+// inflate), and the newest LastPlayedDate.
+const playedStateQuery = `
+SELECT iid, MAX(played) AS played, SUM(pc) AS play_count, MAX(lpd) AS last_played
+FROM (
+  SELECT lower(replace(ItemId,'-','')) AS iid,
+         lower(replace(UserId,'-','')) AS uid,
+         MAX(Played)                   AS played,
+         MAX(PlayCount)                AS pc,
+         MAX(LastPlayedDate)           AS lpd
+  FROM UserData
+  GROUP BY iid, uid
+)
+GROUP BY iid`
+
+const usersQuery = `SELECT lower(replace(Id,'-','')), COALESCE(Username,'') FROM Users`
+
+// userPlaysQuery rolls UserData to one row per (user, movie|series): episodes
+// fold into their series, movies stay themselves.
+const userPlaysQuery = `
+SELECT uid, scope, pid, MAX(name) AS name, SUM(pc) AS play_count, MAX(lpd) AS last_played
+FROM (
+  SELECT lower(replace(ud.UserId,'-',''))  AS uid,
+         CASE WHEN bi.Type = '` + episodeType + `' THEN 'series' ELSE 'movie' END AS scope,
+         lower(replace(
+           CASE WHEN bi.Type = '` + episodeType + `' AND COALESCE(bi.SeriesId,'') <> ''
+                THEN bi.SeriesId ELSE bi.Id END, '-', '')) AS pid,
+         CASE WHEN bi.Type = '` + episodeType + `' AND COALESCE(bi.SeriesName,'') <> ''
+              THEN bi.SeriesName ELSE bi.Name END AS name,
+         MAX(ud.PlayCount)      AS pc,
+         MAX(ud.LastPlayedDate) AS lpd
+  FROM UserData ud
+  JOIN BaseItems bi ON bi.Id = ud.ItemId
+  WHERE bi.Type IN ('` + movieType + `', '` + episodeType + `')
+    AND COALESCE(ud.PlayCount,0) > 0
+  GROUP BY uid, pid, ud.ItemId
+)
+GROUP BY uid, pid`
 
 func defaultQueryLibrary(db *sql.DB) (source.LibrarySnapshot, error) {
 	rows, err := db.Query(libraryQuery, movieType, episodeType)
@@ -79,16 +120,18 @@ func defaultQueryLibrary(db *sql.DB) (source.LibrarySnapshot, error) {
 	for rows.Next() {
 		var (
 			name, typ, dateRaw, genres, library, itemPath string
+			rawID, rawSeriesID, seriesName                string
 			size, ticks                                   int64
 			year                                          int
 			codec, colorTransfer                          sql.NullString
 			width, dvProfile                              sql.NullInt64
 		)
 		if err := rows.Scan(&name, &typ, &size, &ticks, &dateRaw, &year, &genres, &library, &itemPath,
-			&codec, &width, &colorTransfer, &dvProfile); err != nil {
+			&codec, &width, &colorTransfer, &dvProfile, &rawID, &rawSeriesID, &seriesName); err != nil {
 			return source.LibrarySnapshot{}, err
 		}
 		it := source.LibraryItem{
+			ID:            source.CanonID(rawID),
 			Name:          name,
 			Type:          shortType(typ),
 			SizeBytes:     size,
@@ -103,6 +146,8 @@ func defaultQueryLibrary(db *sql.DB) (source.LibrarySnapshot, error) {
 			Width:         int(width.Int64),
 			HasVideo:      width.Valid || codec.Valid,
 			ColorTransfer: colorTransfer.String,
+			SeriesID:      source.CanonID(rawSeriesID),
+			SeriesName:    seriesName,
 		}
 		if dvProfile.Valid && dvProfile.Int64 > 0 {
 			p := int(dvProfile.Int64)
@@ -114,12 +159,94 @@ func defaultQueryLibrary(db *sql.DB) (source.LibrarySnapshot, error) {
 		return source.LibrarySnapshot{}, err
 	}
 
+	if err := foldPlayedState(db, &snap); err != nil {
+		return source.LibrarySnapshot{}, err
+	}
+	if err := readUsers(db, &snap); err != nil {
+		return source.LibrarySnapshot{}, err
+	}
+	if err := readUserPlays(db, &snap); err != nil {
+		return source.LibrarySnapshot{}, err
+	}
+
 	if err := db.QueryRow(
 		`SELECT count(*) FROM BaseItems WHERE Type = ? AND COALESCE(IsVirtualItem,0)=0`, seriesType,
 	).Scan(&snap.SeriesCount); err != nil {
 		return source.LibrarySnapshot{}, err
 	}
 	return snap, nil
+}
+
+type playState struct {
+	played    bool
+	playCount int64
+	last      time.Time
+}
+
+func foldPlayedState(db *sql.DB, snap *source.LibrarySnapshot) error {
+	rows, err := db.Query(playedStateQuery)
+	if err != nil {
+		return err
+	}
+	byItem := map[string]playState{}
+	for rows.Next() {
+		var iid string
+		var played, pc int64
+		var lpd sql.NullString
+		if err := rows.Scan(&iid, &played, &pc, &lpd); err != nil {
+			rows.Close()
+			return err
+		}
+		byItem[iid] = playState{played == 1, pc, parseJellyfinTime(lpd.String)}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for i := range snap.Items {
+		if ps, ok := byItem[snap.Items[i].ID]; ok {
+			snap.Items[i].Played = ps.played
+			snap.Items[i].PlayCount = int(ps.playCount)
+			snap.Items[i].LastPlayedAt = ps.last
+		}
+	}
+	return nil
+}
+
+func readUsers(db *sql.DB, snap *source.LibrarySnapshot) error {
+	rows, err := db.Query(usersQuery)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var u source.UserRef
+		if err := rows.Scan(&u.ID, &u.Name); err != nil {
+			return err
+		}
+		snap.Users = append(snap.Users, u)
+	}
+	return rows.Err()
+}
+
+func readUserPlays(db *sql.DB, snap *source.LibrarySnapshot) error {
+	rows, err := db.Query(userPlaysQuery)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var p source.UserPlay
+		var pc int64
+		var lpd sql.NullString
+		if err := rows.Scan(&p.UserID, &p.Scope, &p.ItemID, &p.Name, &pc, &lpd); err != nil {
+			return err
+		}
+		p.PlayCount = int(pc)
+		p.LastPlayedAt = parseJellyfinTime(lpd.String)
+		snap.UserPlays = append(snap.UserPlays, p)
+	}
+	return rows.Err()
 }
 
 func shortType(t string) string {
