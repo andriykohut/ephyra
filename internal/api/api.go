@@ -45,6 +45,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 	mux.HandleFunc("GET /api/library/overview", s.handleLibraryOverview)
+	mux.HandleFunc("GET /api/cleanup", s.handleCleanup)
 	mux.HandleFunc("POST /api/refresh", s.handleRefresh)
 	mux.HandleFunc("/", s.handleRoot)
 	return withLogging(s.log, mux)
