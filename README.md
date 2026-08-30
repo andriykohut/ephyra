@@ -125,3 +125,12 @@ JELLYFIN_URL=x JELLYFIN_API_KEY=x JELLYFIN_DATA_DIR=/tmp/jf \
 
 `docs/superpowers/specs/` has the design spec; `docs/superpowers/plans/` has the
 implementation plans. This is Plan 1 of 3.
+
+## License
+
+MIT — see `LICENSE`. Third-party components (the bundled fonts under the SIL
+Open Font License, Apache ECharts, and the rest) are listed in `NOTICES.md`.
+
+The **ephyra** name and the mark aren't covered by the MIT license — fork the
+code freely, but don't ship it under this name or logo in a way that implies
+it's the same project.
