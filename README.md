@@ -87,17 +87,59 @@ entirely — libraries don't change often, so most runs do no work.
 
 Ephyra never writes to Jellyfin or to the mounted directory.
 
-## Verify the schema (once, recommended)
+## Test against a real library
 
-Ephyra's queries assume a particular `library.db` layout (see
-`docs/schema-notes.md`). Jellyfin builds vary a little. On the Jellyfin host:
+Ephyra's queries assume a `library.db` layout that hasn't been checked against a
+real Jellyfin yet (`docs/schema-notes.md` is the assumed shape). Builds vary. Do
+this once before trusting the numbers.
+
+### Get a copy of `library.db`
+
+It lives at `<jellyfin-config>/data/library.db`, plus `-wal` and `-shm` sidecars
+that must come with it (WAL mode). For the official and linuxserver Docker images
+the config dir is `/config`, so it's `/config/data/library.db` inside the
+container.
+
+Jellyfin writes to it while running. Either stop Jellyfin for the copy, or just
+copy all three files live — Ephyra replays the WAL on its own copy, so a slightly
+torn read of a library that isn't mid-scan is fine.
 
 ```sh
-JELLYFIN_DATA_DIR=/path/to/jellyfin/config ./scripts/dump-jellyfin-schema.sh
+mkdir -p ~/ephyra-test/jf/data
+
+# Jellyfin in a container (run wherever that container is):
+cid=$(docker ps --filter name=jellyfin --format '{{.ID}}' | head -1)
+for f in library.db library.db-wal library.db-shm; do
+  docker cp "$cid:/config/data/$f" ~/ephyra-test/jf/data/ 2>/dev/null || true
+done
+
+# Jellyfin not containerised: cp library.db* from <jellyfin-config>/data/
+# Jellyfin on another machine: do the copy there, then scp/rsync the dir over.
 ```
 
-Compare the dump against `docs/schema-notes.md`. If something's off, the numbers
-on the Library page will look wrong — the notes say which queries to adjust.
+### Check the schema
+
+```sh
+sqlite3 ~/ephyra-test/jf/data/library.db .schema | less
+# or: JELLYFIN_DATA_DIR=~/ephyra-test/jf ./scripts/dump-jellyfin-schema.sh
+```
+
+Compare against `docs/schema-notes.md`. Mismatches (`TopParentId` format, renamed
+or missing columns, HDR/Dolby-Vision fields) mean `internal/source/file/queries.go`
+needs a tweak — the notes say which.
+
+### Run against it and eyeball the numbers
+
+```sh
+JELLYFIN_URL=x JELLYFIN_API_KEY=x JELLYFIN_DATA_DIR=~/ephyra-test/jf \
+  STORE_PATH=~/ephyra-test/ephyra.db WORK_DIR=~/ephyra-test/work \
+  go run ./cmd/ephyra
+```
+
+Open `http://localhost:8080`. The totals, genre band, decade spread, disk-by-codec
+and library growth should match what you know your library actually holds. If a
+number is wrong, the query that produced it is in `internal/source/file/queries.go`
+and the rollup is in `internal/aggregate/library.go`.
 
 ## Development
 
