@@ -1,9 +1,10 @@
-// Package scheduler runs Ephyra's periodic refresh jobs. In Plan 1 that's just
-// the library job.
+// Package scheduler runs Ephyra's periodic refresh jobs: the library job and,
+// since Plan 2, the watch job.
 package scheduler
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"sync"
 	"time"
@@ -21,6 +22,7 @@ type Scheduler struct {
 	log *slog.Logger
 
 	libMu   sync.Mutex
+	watchMu sync.Mutex
 	trigger chan string
 }
 
@@ -43,8 +45,13 @@ func (s *Scheduler) Run(ctx context.Context) {
 	if err := s.RunLibraryOnce(ctx); err != nil {
 		s.log.Warn("startup library refresh failed", "err", err)
 	}
+	if err := s.RunWatchOnce(ctx); err != nil {
+		s.log.Warn("startup watch refresh failed", "err", err)
+	}
 	lib := time.NewTicker(s.cfg.RefreshLibrary)
 	defer lib.Stop()
+	wat := time.NewTicker(s.cfg.RefreshWatch)
+	defer wat.Stop()
 	for {
 		select {
 		case <-ctx.Done():
@@ -53,13 +60,21 @@ func (s *Scheduler) Run(ctx context.Context) {
 			if err := s.RunLibraryOnce(ctx); err != nil {
 				s.log.Warn("library refresh failed", "err", err)
 			}
+		case <-wat.C:
+			if err := s.RunWatchOnce(ctx); err != nil {
+				s.log.Warn("watch refresh failed", "err", err)
+			}
 		case job := <-s.trigger:
 			if job == "library" || job == "all" {
 				if err := s.RunLibraryOnce(ctx); err != nil {
 					s.log.Warn("triggered library refresh failed", "err", err)
 				}
 			}
-			// "watch" arrives in Plan 2
+			if job == "watch" || job == "all" {
+				if err := s.RunWatchOnce(ctx); err != nil {
+					s.log.Warn("triggered watch refresh failed", "err", err)
+				}
+			}
 		}
 	}
 }
@@ -110,4 +125,50 @@ func (s *Scheduler) recordFailure(ctx context.Context, job string, mt, start tim
 		DurationMS: time.Since(start).Milliseconds(), OK: false, Error: cause.Error(),
 	})
 	return cause
+}
+
+// RunWatchOnce refreshes the watch aggregates from the Playback Reporting plugin
+// DB. mtime-skip like the library job. A missing plugin is not a failure: it
+// records ok=true, plugin_available=false and writes no agg_watch_* rows.
+func (s *Scheduler) RunWatchOnce(ctx context.Context) error {
+	s.watchMu.Lock()
+	defer s.watchMu.Unlock()
+	start := time.Now()
+
+	var mt time.Time
+	if mtimer, ok := s.src.(source.MTimer); ok {
+		mt, _ = mtimer.SourceMTime("watch")
+	}
+	prev, hadPrev, _ := s.st.GetRefreshMeta(ctx, "watch")
+	if hadPrev && prev.OK && !prev.SourceMTime.IsZero() && !mt.IsZero() && mt.Equal(prev.SourceMTime) {
+		s.log.Info("watch refresh skipped (mtime unchanged)", "mtime", mt)
+		return s.st.SetRefreshMeta(ctx, store.RefreshMeta{
+			Job: "watch", LastRunAt: time.Now().UTC(), SourceMTime: mt,
+			DurationMS: time.Since(start).Milliseconds(), OK: true, Skipped: true,
+			PluginAvailable: prev.PluginAvailable,
+		})
+	}
+
+	events, err := s.src.PlaybackEvents(ctx, time.Time{})
+	if errors.Is(err, source.ErrPluginUnavailable) {
+		s.log.Info("watch refresh: Playback Reporting plugin not found")
+		return s.st.SetRefreshMeta(ctx, store.RefreshMeta{
+			Job: "watch", LastRunAt: time.Now().UTC(), SourceMTime: mt,
+			DurationMS: time.Since(start).Milliseconds(), OK: true, PluginAvailable: false,
+		})
+	}
+	if err != nil {
+		return s.recordFailure(ctx, "watch", mt, start, err)
+	}
+
+	agg := aggregate.Watch(events)
+	if err := s.st.WriteWatchAggregates(ctx, agg.Daily, agg.Heatmap); err != nil {
+		return s.recordFailure(ctx, "watch", mt, start, err)
+	}
+	s.log.Info("watch refresh ok", "events", len(events), "daily_rows", len(agg.Daily),
+		"dur_ms", time.Since(start).Milliseconds())
+	return s.st.SetRefreshMeta(ctx, store.RefreshMeta{
+		Job: "watch", LastRunAt: time.Now().UTC(), SourceMTime: mt,
+		DurationMS: time.Since(start).Milliseconds(), OK: true, PluginAvailable: true,
+	})
 }
