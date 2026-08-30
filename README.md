@@ -4,10 +4,9 @@
 
 # ephyra
 
-A stats dashboard for Jellyfin. It reads copies of Jellyfin's SQLite files on a
-schedule, rolls them up into its own small database, and serves the result as a
-single Go binary with the frontend baked in. Standing load on Jellyfin is
-basically nil.
+A fast, self-hosted stats dashboard for Jellyfin: library breakdowns, watch
+history, and cleanup candidates, in one Go binary with the frontend baked in.
+Runs beside Jellyfin in Docker Compose and puts next to no load on the server.
 
 Named after the juvenile stage of a jellyfin— sorry, jellyfish.
 
@@ -75,7 +74,7 @@ for login.
 | `DIRECT_READ` | no | `false` | skip the copy, read the live DB with `immutable=1`. Only if your mount is read-write |
 | `STREAM_CAPACITY` | no | unset | unused in this build |
 | `LOG_LEVEL` | no | `info` | `debug` \| `info` \| `warn` \| `error`; JSON to stdout |
-| `TZ` | no | `UTC` | affects month bucketing on the growth chart |
+| `TZ` | no | `UTC` | e.g. `Europe/Kyiv`; affects month bucketing on the growth chart |
 
 ## How it reads data
 
