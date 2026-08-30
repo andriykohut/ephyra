@@ -11,10 +11,10 @@ basically nil.
 
 Named after the juvenile stage of a jellyfin— sorry, jellyfish.
 
-> **Pre-alpha.** Very much so. One page works, three are stubs, the schema
-> assumptions haven't been checked against a real Jellyfin, nothing is tagged,
-> and anything here can change without notice. Run it if you're curious, not if
-> you're relying on it.
+> **Pre-alpha.** Very much so. One page works, three are stubs, only one real
+> Jellyfin (10.11.11) has been tested against, nothing is tagged, and anything
+> here can change without notice. Run it if you're curious, not if you're
+> relying on it.
 
 **This build ships the Library page.** Watch Stats, Now Playing, and Cleanup are
 stubs for now.
@@ -64,7 +64,7 @@ for login.
 |---|---|---|---|
 | `JELLYFIN_URL` | yes | — | e.g. `http://jellyfin:8096` |
 | `JELLYFIN_API_KEY` | yes | — | not exercised in this build, still required |
-| `JELLYFIN_DATA_DIR` | yes (unless `SOURCE=api`) | — | the read-only mount; DBs read from `<dir>/data/` |
+| `JELLYFIN_DATA_DIR` | yes (unless `SOURCE=api`) | — | the read-only mount; DBs read from `<dir>/data/` or `<dir>/data/data/` |
 | `SOURCE` | no | `auto` | `file` \| `api` \| `auto`. `api` is not implemented yet |
 | `STORE_PATH` | no | `/data/ephyra.db` | Ephyra's own database |
 | `WORK_DIR` | no | `/data/work` | scratch space for DB copies; must be writable |
@@ -80,8 +80,8 @@ for login.
 ## How it reads data
 
 The Jellyfin mount is read-only, and SQLite won't open a WAL database read-only
-without writing a `-shm` sidecar. So each refresh copies `library.db` (plus its
-`-wal` / `-shm`) into `WORK_DIR`, queries the copy, and deletes it. If the file's
+without writing a `-shm` sidecar. So each refresh copies the item DB — `jellyfin.db` (plus its
+`-wal` / `-shm`) — into `WORK_DIR`, queries the copy, and deletes it. If the file's
 mtime hasn't changed since the last successful run, the refresh is skipped
 entirely — libraries don't change often, so most runs do no work.
 
@@ -89,44 +89,45 @@ Ephyra never writes to Jellyfin or to the mounted directory.
 
 ## Test against a real library
 
-Ephyra's queries assume a `library.db` layout that hasn't been checked against a
-real Jellyfin yet (`docs/schema-notes.md` is the assumed shape). Builds vary. Do
-this once before trusting the numbers.
+`internal/source/file/queries.go` targets Jellyfin 10.11's `jellyfin.db`
+(`docs/schema-notes.md`), checked against one real 10.11.11. Builds vary. Do this
+after upgrading Jellyfin, or if the numbers look wrong.
 
-### Get a copy of `library.db`
+### Get a copy of the item DB
 
-It lives at `<jellyfin-config>/data/library.db`, plus `-wal` and `-shm` sidecars
-that must come with it (WAL mode). For the official and linuxserver Docker images
-the config dir is `/config`, so it's `/config/data/library.db` inside the
-container.
+10.11 keeps it in **`jellyfin.db`** at `<jellyfin-config>/data/jellyfin.db` — or
+`<jellyfin-config>/data/data/jellyfin.db` on the linuxserver image. Older
+installs have `library.db` in the same place. Bring the `-wal` and `-shm`
+sidecars with it (WAL mode).
 
-Jellyfin writes to it while running. Either stop Jellyfin for the copy, or just
-copy all three files live — Ephyra replays the WAL on its own copy, so a slightly
-torn read of a library that isn't mid-scan is fine.
+Jellyfin writes to it while running. Either stop Jellyfin for the copy, or copy
+all three files live — Ephyra replays the WAL on its own copy, so a slightly torn
+read of a library that isn't mid-scan is fine.
 
 ```sh
 mkdir -p ~/ephyra-test/jf/data
 
 # Jellyfin in a container (run wherever that container is):
 cid=$(docker ps --filter name=jellyfin --format '{{.ID}}' | head -1)
-for f in library.db library.db-wal library.db-shm; do
-  docker cp "$cid:/config/data/$f" ~/ephyra-test/jf/data/ 2>/dev/null || true
+db=$(docker exec "$cid" sh -c 'ls /config/data/jellyfin.db /config/data/data/jellyfin.db 2>/dev/null | head -1')
+for f in "$db" "$db-wal" "$db-shm"; do
+  docker cp "$cid:$f" ~/ephyra-test/jf/data/ 2>/dev/null || true
 done
 
-# Jellyfin not containerised: cp library.db* from <jellyfin-config>/data/
+# Jellyfin not containerised: cp jellyfin.db* from <jellyfin-config>/data/
 # Jellyfin on another machine: do the copy there, then scp/rsync the dir over.
 ```
 
 ### Check the schema
 
 ```sh
-sqlite3 ~/ephyra-test/jf/data/library.db .schema | less
+sqlite3 ~/ephyra-test/jf/data/jellyfin.db .schema | less
 # or: JELLYFIN_DATA_DIR=~/ephyra-test/jf ./scripts/dump-jellyfin-schema.sh
 ```
 
-Compare against `docs/schema-notes.md`. Mismatches (`TopParentId` format, renamed
-or missing columns, HDR/Dolby-Vision fields) mean `internal/source/file/queries.go`
-needs a tweak — the notes say which.
+Compare against `docs/schema-notes.md`. Mismatches (renamed tables/columns,
+`TopParentId` semantics, HDR/Dolby-Vision fields) mean
+`internal/source/file/queries.go` needs a tweak — the notes say which.
 
 ### Run against it and eyeball the numbers
 
@@ -150,12 +151,12 @@ cd web && npm run dev      # :5173, proxies /api and /healthz to :8080
 go run ./cmd/ephyra        # :8080
 ```
 
-Point `JELLYFIN_DATA_DIR` at a directory with a `data/library.db`. There's a
+Point `JELLYFIN_DATA_DIR` at a directory with a `data/jellyfin.db`. There's a
 throwaway fixture at `testdata/library.fixture.sql` if you don't want to touch a
 real one:
 
 ```sh
-mkdir -p /tmp/jf/data && sqlite3 /tmp/jf/data/library.db < testdata/library.fixture.sql
+mkdir -p /tmp/jf/data && sqlite3 /tmp/jf/data/jellyfin.db < testdata/library.fixture.sql
 JELLYFIN_URL=x JELLYFIN_API_KEY=x JELLYFIN_DATA_DIR=/tmp/jf \
   STORE_PATH=/tmp/ephyra.db WORK_DIR=/tmp/ephyra-work go run ./cmd/ephyra
 ```

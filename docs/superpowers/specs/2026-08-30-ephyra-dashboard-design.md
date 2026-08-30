@@ -115,6 +115,11 @@ scheduler tick / POST /api/refresh
 
 ### 5.1 Jellyfin item DB
 
+> **Update 2026-08-30:** verified against a real 10.11.11 — the EF-Core move
+> anticipated for JF12 already landed in 10.11. `FileSource` now targets
+> `jellyfin.db` (`BaseItems` / `MediaStreamInfos`); see `docs/schema-notes.md`.
+
+
 - Expected path inside the container: `${JELLYFIN_DATA_DIR}/data/library.db`
   (plus `-wal`, `-shm` sidecars). `JELLYFIN_DATA_DIR` is the read-only mount of
   Jellyfin's config directory (`/config` for both the official and linuxserver

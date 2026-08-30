@@ -43,12 +43,34 @@ func New(cfg config.Config, log *slog.Logger) *FileSource {
 
 func (f *FileSource) Kind() string { return "file" }
 
-func (f *FileSource) dbPath(job string) string {
-	name := "library.db"
+// dbCandidates lists where the job's SQLite file might live, best guess first.
+// 10.11 renamed the item store library.db -> jellyfin.db (EF-Core); the
+// linuxserver image nests it one deeper (mount is /config, datadir is
+// /config/data), so both data/ and data/data/ are checked.
+func (f *FileSource) dbCandidates(job string) []string {
+	names := []string{"jellyfin.db", "library.db"}
 	if job == "watch" {
-		name = "playback_reporting.db"
+		names = []string{"playback_reporting.db"}
 	}
-	return filepath.Join(f.dataDir, "data", name)
+	var out []string
+	for _, dir := range []string{"data", filepath.Join("data", "data")} {
+		for _, n := range names {
+			out = append(out, filepath.Join(f.dataDir, dir, n))
+		}
+	}
+	return out
+}
+
+// dbPath returns the first candidate that exists, or the best-guess candidate so
+// error messages point somewhere sensible.
+func (f *FileSource) dbPath(job string) string {
+	cands := f.dbCandidates(job)
+	for _, p := range cands {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	return cands[0]
 }
 
 // SourceMTime returns the mod time of the job's database file, or the zero time

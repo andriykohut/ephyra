@@ -17,7 +17,7 @@ func TestLibraryFixtureDB(t *testing.T) {
 
 	var movies int
 	if err := db.QueryRow(
-		`SELECT count(*) FROM TypedBaseItems WHERE type = ?`,
+		`SELECT count(*) FROM BaseItems WHERE Type = ?`,
 		"MediaBrowser.Controller.Entities.Movies.Movie",
 	).Scan(&movies); err != nil {
 		t.Fatal(err)
@@ -27,7 +27,7 @@ func TestLibraryFixtureDB(t *testing.T) {
 	}
 
 	var streams int
-	if err := db.QueryRow(`SELECT count(*) FROM MediaStreams WHERE StreamType='Video'`).Scan(&streams); err != nil {
+	if err := db.QueryRow(`SELECT count(*) FROM MediaStreamInfos WHERE StreamType = 1`).Scan(&streams); err != nil {
 		t.Fatal(err)
 	}
 	if streams != 5 {

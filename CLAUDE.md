@@ -32,13 +32,13 @@ Dev — two processes:
 
 ```sh
 cd web && npm run dev      # :5173, proxies /api and /healthz to :8080
-go run ./cmd/ephyra        # :8080  (needs a data/library.db to read — see below)
+go run ./cmd/ephyra        # :8080  (needs a Jellyfin DB to read — see below)
 ```
 
 Run against the checked-in fixture instead of a real Jellyfin:
 
 ```sh
-mkdir -p /tmp/jf/data && sqlite3 /tmp/jf/data/library.db < testdata/library.fixture.sql
+mkdir -p /tmp/jf/data && sqlite3 /tmp/jf/data/jellyfin.db < testdata/library.fixture.sql
 JELLYFIN_URL=x JELLYFIN_API_KEY=x JELLYFIN_DATA_DIR=/tmp/jf \
   STORE_PATH=/tmp/ephyra.db WORK_DIR=/tmp/ephyra-work go run ./cmd/ephyra
 ```
@@ -50,9 +50,9 @@ JELLYFIN_URL=x JELLYFIN_API_KEY=x JELLYFIN_DATA_DIR=/tmp/jf \
 ```
 scheduler tick / POST /api/refresh
   └─ Source.LibraryFacts(ctx)
-       FileSource: stat library.db; if mtime == refresh_meta.source_mtime → skip,
-       just bump the meta. Otherwise copy library.db + -wal/-shm into WORK_DIR,
-       query the copy, delete it.
+       FileSource: stat the item DB (jellyfin.db, under data/ or data/data/);
+       if mtime == refresh_meta.source_mtime → skip, just bump the meta.
+       Otherwise copy it + -wal/-shm into WORK_DIR, query the copy, delete it.
   └─ aggregate.Library(snapshot, loc)   ← pure, no I/O, no SQL
   └─ store.WriteLibraryAggregates(...)  ← one txn: DELETE + re-INSERT the agg_* rows
 API handlers read ONLY from store's agg_* tables, never from Jellyfin.
@@ -81,7 +81,7 @@ API handlers read ONLY from store's agg_* tables, never from Jellyfin.
   `/api/*` paths return 404 JSON; every other GET falls through to the SPA
   (`index.html`).
 - `cmd/ephyra/main.go` — wiring + graceful shutdown. Picks the source, fails fast
-  with a clear message if `library.db` isn't reachable.
+  with a clear message if the item DB isn't reachable.
 
 **Frontend (`web/`):** React 19 + Vite + TypeScript, Tailwind v4, TanStack Router
 + Query, Apache ECharts.
@@ -99,14 +99,15 @@ API handlers read ONLY from store's agg_* tables, never from Jellyfin.
 
 ## Jellyfin schema
 
-The queries in `internal/source/file/queries.go` assume a particular `library.db`
-layout, documented in `docs/schema-notes.md`. That layout has **not** been
-verified against a real Jellyfin yet — README's "Test against a real library"
-walks through copying a real `library.db`, checking the schema, and running the
-binary against it to eyeball the aggregates. Do that before trusting the numbers.
-`testdata/library.fixture.sql` is a hand-built stand-in shaped like the assumed
-schema; `internal/testsupport.LibraryFixtureDB(t)` builds it into a temp DB per
-test.
+`internal/source/file/queries.go` targets Jellyfin **10.11**'s `jellyfin.db`
+(EF-Core: `BaseItems` / `MediaStreamInfos`), verified against a real DB on
+2026-08-30. `docs/schema-notes.md` records the layout and the gotchas (integer
+`StreamType` enum, `TopParentId` points at the physical folder not the
+`CollectionFolder`, no `Container` column — derived from `Path`). Older
+`library.db` installs (10.10 and earlier) are not handled. Re-run README's "Test
+against a real library" after any Jellyfin upgrade. `testdata/library.fixture.sql`
+is a hand-built stand-in in that schema; `internal/testsupport.LibraryFixtureDB(t)`
+loads it into a temp DB per test.
 
 ## Conventions
 
