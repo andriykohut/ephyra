@@ -7,6 +7,11 @@ basically nil.
 
 Named after the juvenile stage of a jellyfin— sorry, jellyfish.
 
+> **Pre-alpha.** Very much so. One page works, three are stubs, the schema
+> assumptions haven't been checked against a real Jellyfin, nothing is tagged,
+> and anything here can change without notice. Run it if you're curious, not if
+> you're relying on it.
+
 **This build ships the Library page.** Watch Stats, Now Playing, and Cleanup are
 stubs for now.
 
