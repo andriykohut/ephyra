@@ -445,35 +445,49 @@ where `EventSource` is unavailable):
 
 ### 10.1 Stack & tooling
 
-- React + Vite + **TypeScript**.
-- **Mantine** (`@mantine/core`, `@mantine/hooks`) + **`@mantine/charts`**
-  (Recharts under the hood) for layout, tables, tabs, controls, and charts.
-- **TanStack Query** for fetching/caching. `staleTime` per endpoint matched to
-  its refresh interval; background refetch on window focus; the envelope's
-  `meta.stale` surfaces a small "data is catching up" banner.
-- `react-router` for client-side routing.
-- **Biome** for lint + format (replaces ESLint + Prettier). CI runs
-  `biome ci .`.
-- **Vitest** + React Testing Library for component tests.
+- **React 19** + **Vite** (latest) + **TypeScript**.
+- **Tailwind CSS v4** (CSS-first config) + **shadcn/ui** components on **Radix**
+  primitives. Design tokens (color, spacing, radius, type scale) live in one
+  Tailwind theme layer; every component is owned in-repo, so nothing reads as a
+  library default. `lucide-react` for icons.
+- **Charts: Apache ECharts** via a thin local React wrapper (`echarts` core +
+  explicit imports of the chart/component modules actually used, so the bundle
+  stays tree-shaken). One hand-tuned light+dark theme object shared by every
+  chart; tokens sourced from the Tailwind theme.
+- **TanStack Router** — type-safe routes and typed URL search params (the
+  `range` / `watched` / `sort` params on Watch Stats and Cleanup are declared on
+  the route). Pairs with **TanStack Query** for fetching/caching: `staleTime`
+  per endpoint matched to its refresh interval, background refetch on focus, and
+  the envelope's `meta.stale` drives a small "data is catching up" banner.
+- **Biome** for lint + format. CI runs `biome ci .`.
+- **Vitest 3** + React Testing Library for component tests; `@testing-library/jest-dom`.
+- A distinctive typeface, self-hosted (bundled as a Vite asset — no external CDN,
+  the container has no egress for fonts). Chosen during the `frontend-design`
+  pass.
+
+The `frontend-design` skill is run before building this layer to set the visual
+direction (palette, type, density, motion); the `dataviz` skill informs the
+chart theme and encodings.
 
 ### 10.2 App shell & routes
 
-Mantine `AppShell`: left nav (Library / Watch / Now Playing / Cleanup), header
-with server name + version and a "last refreshed · Refresh now" control that
-calls `POST /api/refresh?job=all`. Nav collapses to a burger below `sm`.
+A custom `AppShell`: left sidebar nav (Library / Watch / Now Playing / Cleanup),
+top bar with server name + version and a "last refreshed · Refresh now" control
+that calls `POST /api/refresh?job=all`. Sidebar collapses to a sheet/drawer on
+narrow viewports.
 
 | Route | Component | Data |
 |---|---|---|
 | `/` | redirect → `/library` | — |
 | `/library` | `LibraryOverview` | `GET /api/library/overview` |
-| `/watch` | `WatchStats` (range SegmentedControl: 30d / 90d / 1y / all) | `GET /api/watch/stats?range=` |
+| `/watch` | `WatchStats` (typed search param `range`: 30d / 90d / 1y / all) | `GET /api/watch/stats?range=` |
 | `/now` | `NowPlaying` | `EventSource /api/now-playing/stream`; `GET /api/now-playing` for first paint / fallback |
-| `/cleanup` | `Cleanup` (watched=never/stale toggle, sort control, "Export CSV") | `GET /api/cleanup?…` |
+| `/cleanup` | `Cleanup` (typed search params `watched` = never/stale, `sort` = size/added; "Export CSV") | `GET /api/cleanup?…` |
 
 ### 10.3 Per-page components & states
 
-Every page renders: **loading** (Mantine `Skeleton`), **error** (message +
-Retry), **empty** (contextual copy), **data**. Additional:
+Every page renders: **loading** (skeleton), **error** (message + Retry),
+**empty** (contextual copy), **data**. Additional:
 
 - `WatchStats` handles `plugin_available: false` with a dedicated panel: what the
   plugin is, and copy-paste steps to install it from Jellyfin's plugin catalog.
@@ -484,24 +498,25 @@ Retry), **empty** (contextual copy), **data**. Additional:
 
 ### 10.4 Charts & the heatmap
 
-- `@mantine/charts`: `BarChart` (disk by resolution/codec, genres, decades,
-  active users), `AreaChart` (library growth — monthly bars + cumulative line;
-  play-method weekly stacked), `LineChart` (watch-time trend).
-- **Heatmap** (`WhenWeWatch`): a custom ~40-line component — CSS grid, 7 rows ×
-  24 cols, cell background interpolated on `watch_sec` (light→accent), Mantine
-  `Tooltip` per cell (`Sun 21:00 · 3.2 h`). No library.
-- Ranked lists (top movies/series/episodes, active users) are Mantine `Table`
-  with a plays ↔ hours `SegmentedControl`, not charts.
+- ECharts, one shared theme: `bar` (disk by resolution/codec, genres, decades,
+  active users), `line`/`area` (library growth — bars + cumulative line;
+  play-method weekly stacked; watch-time trend).
+- **Heatmap** (`WhenWeWatch`): ECharts `heatmap` series on a 7 × 24 grid
+  (`dow` × `hour`), cell color scaled on `watch_sec`, tooltip
+  `Sun 21:00 · 3.2 h`.
+- Ranked lists (top movies/series/episodes, active users) are a shadcn/ui
+  `Table` with a plays ↔ hours toggle, not charts.
 
 ### 10.5 Build & embedding; dev proxy
 
 - `web/` is its own package (`package.json`, Vite config). `vite build` outputs
   `web/dist/`.
-- Go embeds it: `//go:embed all:web/dist` in a `web` package that exposes an
-  `fs.FS`. The `api` server serves it at `/`, falling back to `index.html` for
-  any non-`/api`, non-`/healthz` path (SPA routing).
-- Dev: `vite dev` on `:5173` with a proxy for `/api` → `http://localhost:8080`
-  (the Go server run locally). A `make dev` target runs both.
+- Go embeds it: `//go:embed all:dist` in a `web` package exposing an `fs.FS`.
+  The `api` server serves it at `/`, falling back to `index.html` for any
+  non-`/api`, non-`/healthz` path (SPA routing).
+- Dev: `vite dev` on `:5173` proxying `/api` and `/healthz` →
+  `http://localhost:8080` (the Go server run locally). `make dev` documents the
+  two-process setup.
 - The Go build depends on `web/dist` existing; `make build` runs the Vite build
   first. CI and the Dockerfile enforce the order.
 

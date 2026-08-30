@@ -4,9 +4,9 @@
 
 **Goal:** Stand up the Ephyra service spine and ship the Library Overview page end to end — a running container that reads a copy of Jellyfin's `library.db`, materializes library aggregates into its own SQLite, and serves them to an embedded React page.
 
-**Architecture:** A single Go binary. A `Source` interface abstracts data acquisition; `FileSource` copies Jellyfin's SQLite files to a work dir (the mount is read-only) and queries the copy into a `LibrarySnapshot`. Pure `aggregate` functions turn the snapshot into rows; `store` writes them transactionally into Ephyra's own SQLite and reads them back as an API DTO. A `scheduler` runs the library job on a timer, skipping when `library.db`'s mtime is unchanged. A `net/http` API serves the JSON plus the embedded Vite/React/Mantine SPA.
+**Architecture:** A single Go binary. A `Source` interface abstracts data acquisition; `FileSource` copies Jellyfin's SQLite files to a work dir (the mount is read-only) and queries the copy into a `LibrarySnapshot`. Pure `aggregate` functions turn the snapshot into rows; `store` writes them transactionally into Ephyra's own SQLite and reads them back as an API DTO. A `scheduler` runs the library job on a timer, skipping when `library.db`'s mtime is unchanged. A `net/http` API serves the JSON plus the embedded React SPA.
 
-**Tech Stack:** Go 1.25, `modernc.org/sqlite` (pure Go, no CGO), stdlib `net/http` + `log/slog`; React 18 + Vite 5 + TypeScript + Mantine 7 + `@mantine/charts` + TanStack Query; Biome; Vitest; Docker (distroless).
+**Tech Stack:** Go 1.25, `modernc.org/sqlite` (pure Go, no CGO), stdlib `net/http` + `log/slog`; React 19 + Vite + TypeScript, Tailwind v4 + shadcn/ui, TanStack Router + Query, Apache ECharts; Biome; Vitest 3; Docker (distroless).
 
 **Spec:** `docs/superpowers/specs/2026-08-30-ephyra-dashboard-design.md` — read it alongside this plan. This plan implements §4, §5.1, §5.4 (interface only), §5.5, §5.6, §6 (schema; watch tables created but unused), §7 (library job only), §8.1, §8.2, §8.6, §8.7, §10 (shell + Library page), §11, §12, §13, §14, §15.
 
@@ -106,21 +106,31 @@ testdata/library.fixture.sql             # schema + rows for the library fixture
 web/embed.go                             # package web: //go:embed all:dist
 web/dist/.gitkeep
 web/package.json
-web/tsconfig.json
+web/tsconfig.json  web/tsconfig.node.json
 web/vite.config.ts
 web/biome.json
 web/index.html
+web/components.json                      # shadcn/ui config
 web/src/main.tsx
-web/src/theme.ts
+web/src/router.tsx                       # TanStack Router: routeTree + router
+web/src/index.css                        # Tailwind v4 entry + @theme tokens
+web/src/lib/utils.ts                     # cn() helper (clsx + tailwind-merge)
+web/src/lib/format.ts                    # fmtBytes / fmtDuration
 web/src/api/client.ts
 web/src/api/types.ts
+web/src/api/queries.ts                   # TanStack Query options factories
+web/src/components/ui/                    # shadcn primitives (button, card, table, sheet, skeleton, alert, sonner, tooltip, badge, separator)
 web/src/components/AppShell.tsx
 web/src/components/StatCard.tsx
-web/src/components/ChartCard.tsx
+web/src/components/Section.tsx            # titled panel wrapper for charts
 web/src/components/StaleBanner.tsx
-web/src/pages/LibraryOverview.tsx
-web/src/pages/LibraryOverview.test.tsx
-web/src/pages/Placeholder.tsx
+web/src/charts/echarts.ts                # registered ECharts core + modules + theme
+web/src/charts/EChart.tsx                # React wrapper (resize-observed)
+web/src/charts/theme.ts                  # shared light/dark ECharts theme from CSS tokens
+web/src/routes/__root.tsx                # root route: AppShell + Outlet
+web/src/routes/library.tsx               # /library route + LibraryOverview
+web/src/routes/watch.tsx  web/src/routes/now.tsx  web/src/routes/cleanup.tsx  # placeholder routes
+web/src/routes/library.test.tsx
 web/src/test/setup.ts
 ```
 
@@ -3607,25 +3617,46 @@ git commit -m "feat: embed SPA + SPA fallback + main wiring + graceful shutdown"
 
 ## Task 11: Frontend — scaffold, shell, Library Overview page
 
+> **Run the `frontend-design` skill before this task** to set the visual direction
+> (palette, typeface, density, motion, chart aesthetic), and the `dataviz` skill
+> for chart encodings/theme. The code below is the *structure*; the design pass
+> fills in the token values, the typeface, and the chart theme.
+
+**Stack:** React 19 + Vite (latest) + TypeScript · Tailwind CSS v4 (`@tailwindcss/vite`) ·
+shadcn/ui on Radix · TanStack Router (code-based) + TanStack Query v5 ·
+Apache ECharts (tree-shaken, custom theme) · Biome · Vitest 3 + Testing Library.
+
 **Files:** (all under `web/`)
-- Create: `package.json`, `tsconfig.json`, `tsconfig.node.json`, `vite.config.ts`, `biome.json`, `index.html`, `.gitignore` (node_modules)
-- Create: `src/main.tsx`, `src/theme.ts`, `src/test/setup.ts`
-- Create: `src/api/client.ts`, `src/api/types.ts`
-- Create: `src/components/AppShell.tsx`, `src/components/StatCard.tsx`, `src/components/ChartCard.tsx`, `src/components/StaleBanner.tsx`
-- Create: `src/pages/LibraryOverview.tsx`, `src/pages/Placeholder.tsx`
-- Test: `src/pages/LibraryOverview.test.tsx`
+- Create: `package.json`, `tsconfig.json`, `tsconfig.node.json`, `vite.config.ts`, `biome.json`, `components.json`, `index.html`, `.gitignore`
+- Create: `src/index.css`, `src/lib/utils.ts`, `src/lib/format.ts`, `src/test/setup.ts`
+- Create: `src/api/types.ts`, `src/api/client.ts`, `src/api/queries.ts`
+- Create: `src/charts/echarts.ts`, `src/charts/theme.ts`, `src/charts/EChart.tsx`
+- Create: `src/components/ui/*` (via shadcn CLI), `src/components/AppShell.tsx`, `src/components/StatCard.tsx`, `src/components/Section.tsx`, `src/components/StaleBanner.tsx`
+- Create: `src/routes/__root.tsx`, `src/routes/library.tsx`, `src/routes/watch.tsx`, `src/routes/now.tsx`, `src/routes/cleanup.tsx`, `src/router.tsx`, `src/main.tsx`
+- Test: `src/routes/library.test.tsx`
 - Modify: `.github/workflows/ci.yml` (add `web` job)
 
 **Interfaces:**
 - Consumes: `GET /api/library/overview` (envelope from Task 9).
-- Produces: a Vite build to `web/dist/` (embedded by Task 10). `npm run build`, `npm run test`, `npm run lint` scripts.
+- Produces: a Vite build to `web/dist/` (embedded by Task 10). Scripts: `npm run build`, `npm run test`, `npm run lint`.
 
-- [ ] **Step 1: Create `web/package.json`**
+- [ ] **Step 1: Scaffold + install**
 
-```json
+```bash
+cd web
+npm create vite@latest . -- --template react-ts   # accept overwrite into current dir
+npm pkg delete scripts.lint
+npm install @tanstack/react-query @tanstack/react-router echarts class-variance-authority clsx tailwind-merge lucide-react
+npm install -D tailwindcss @tailwindcss/vite @biomejs/biome vitest @vitest/ui jsdom \
+  @testing-library/react @testing-library/jest-dom @testing-library/user-event
+```
+
+Delete Vite's default `src/App.tsx`, `src/App.css`, `src/index.css`, `src/assets`, `public/vite.svg` — this task replaces them.
+
+- [ ] **Step 2: `web/package.json` scripts + `type`**
+
+```jsonc
 {
-  "name": "ephyra-web",
-  "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -3633,36 +3664,45 @@ git commit -m "feat: embed SPA + SPA fallback + main wiring + graceful shutdown"
     "preview": "vite preview",
     "test": "vitest run",
     "lint": "biome ci ."
-  },
-  "dependencies": {
-    "@mantine/charts": "^7.13.0",
-    "@mantine/core": "^7.13.0",
-    "@mantine/hooks": "^7.13.0",
-    "@tanstack/react-query": "^5.56.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-router-dom": "^6.26.0",
-    "recharts": "2"
-  },
-  "devDependencies": {
-    "@biomejs/biome": "^1.9.0",
-    "@testing-library/jest-dom": "^6.5.0",
-    "@testing-library/react": "^16.0.0",
-    "@types/react": "^18.3.5",
-    "@types/react-dom": "^18.3.0",
-    "@vitejs/plugin-react": "^4.3.1",
-    "jsdom": "^25.0.0",
-    "typescript": "^5.6.0",
-    "vite": "^5.4.0",
-    "vitest": "^2.1.0"
   }
 }
 ```
 
-- [ ] **Step 2: Create config files**
+Pin (approximate current majors; `npm install` resolves exact): `react` ^19, `react-dom` ^19,
+`vite` ^7, `@tailwindcss/vite` ^4, `tailwindcss` ^4, `@tanstack/react-router` ^1,
+`@tanstack/react-query` ^5, `echarts` ^5, `@biomejs/biome` ^2, `vitest` ^3.
 
-`web/tsconfig.json`:
-```json
+- [ ] **Step 3: `web/vite.config.ts`**
+
+```ts
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
+import path from "node:path";
+
+export default defineConfig({
+  plugins: [react(), tailwindcss()],
+  resolve: { alias: { "@": path.resolve(__dirname, "src") } },
+  build: { outDir: "dist", emptyOutDir: true },
+  server: {
+    port: 5173,
+    proxy: {
+      "/api": "http://localhost:8080",
+      "/healthz": "http://localhost:8080",
+    },
+  },
+  test: {
+    environment: "jsdom",
+    globals: true,
+    setupFiles: ["./src/test/setup.ts"],
+    css: true,
+  },
+});
+```
+
+- [ ] **Step 4: `web/tsconfig.json`** (+ keep Vite's `tsconfig.node.json`)
+
+```jsonc
 {
   "compilerOptions": {
     "target": "ES2022",
@@ -3675,88 +3715,108 @@ git commit -m "feat: embed SPA + SPA fallback + main wiring + graceful shutdown"
     "noUnusedParameters": true,
     "noEmit": true,
     "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": { "@/*": ["src/*"] },
     "types": ["vitest/globals", "@testing-library/jest-dom"]
   },
   "include": ["src"]
 }
 ```
 
-`web/vite.config.ts`:
-```ts
-import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+- [ ] **Step 5: `web/biome.json`**
 
-export default defineConfig({
-  plugins: [react()],
-  build: { outDir: "dist", emptyOutDir: true },
-  server: {
-    port: 5173,
-    proxy: { "/api": "http://localhost:8080", "/healthz": "http://localhost:8080" },
-  },
-  test: {
-    environment: "jsdom",
-    globals: true,
-    setupFiles: ["./src/test/setup.ts"],
-  },
-});
-```
-
-`web/biome.json`:
 ```json
 {
-  "$schema": "https://biomejs.dev/schemas/1.9.0/schema.json",
-  "organizeImports": { "enabled": true },
-  "linter": { "enabled": true, "rules": { "recommended": true } },
+  "$schema": "https://biomejs.dev/schemas/2.0.0/schema.json",
+  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+  "files": { "includes": ["src/**"] },
+  "linter": { "enabled": true, "rules": { "recommended": true, "a11y": { "recommended": true } } },
   "formatter": { "enabled": true, "indentStyle": "space", "indentWidth": 2, "lineWidth": 100 },
-  "files": { "ignore": ["dist", "node_modules"] }
+  "assist": { "actions": { "source": { "organizeImports": "on" } } }
 }
 ```
 
-`web/index.html`:
-```html
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Ephyra</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
-</html>
+- [ ] **Step 6: `web/src/index.css`** — Tailwind v4 entry + design tokens
+
+> The `frontend-design` pass sets the actual token values, the typeface `@font-face`,
+> and dark-mode overrides. This is the scaffold with placeholder-neutral values.
+
+```css
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "InterVariable", ui-sans-serif, system-ui, sans-serif;
+  --color-bg: oklch(0.99 0 0);
+  --color-surface: oklch(1 0 0);
+  --color-border: oklch(0.92 0.004 260);
+  --color-fg: oklch(0.20 0.02 260);
+  --color-muted: oklch(0.55 0.02 260);
+  --color-accent: oklch(0.62 0.19 300);
+  --color-accent-fg: oklch(0.99 0 0);
+  --radius: 0.75rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  @theme {
+    --color-bg: oklch(0.17 0.01 260);
+    --color-surface: oklch(0.21 0.012 260);
+    --color-border: oklch(0.30 0.012 260);
+    --color-fg: oklch(0.95 0.01 260);
+    --color-muted: oklch(0.68 0.02 260);
+  }
+}
+
+html, body, #root { height: 100%; }
+body { background: var(--color-bg); color: var(--color-fg); font-family: var(--font-sans); }
 ```
 
-`web/src/test/setup.ts`:
+- [ ] **Step 7: `web/src/lib/utils.ts` and `web/src/lib/format.ts`**
+
 ```ts
-import "@testing-library/jest-dom/vitest";
-
-// Recharts/Mantine need these in jsdom
-window.ResizeObserver = class {
-  observe() {}
-  unobserve() {}
-  disconnect() {}
-};
-window.matchMedia = window.matchMedia || (() => ({
-  matches: false, addListener() {}, removeListener() {},
-  addEventListener() {}, removeEventListener() {}, dispatchEvent() { return false; },
-} as unknown as MediaQueryList));
+// utils.ts
+import { type ClassValue, clsx } from "clsx";
+import { twMerge } from "tailwind-merge";
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
 ```
 
-- [ ] **Step 3: Create `web/src/api/types.ts` and `web/src/api/client.ts`**
+```ts
+// format.ts
+const GB = 1024 ** 3;
+export function fmtBytes(n: number): string {
+  if (n >= 1024 ** 4) return `${(n / 1024 ** 4).toFixed(1)} TB`;
+  if (n >= GB) return `${(n / GB).toFixed(0)} GB`;
+  return `${(n / 1024 ** 2).toFixed(0)} MB`;
+}
+export function fmtDuration(sec: number): string {
+  const d = Math.floor(sec / 86400);
+  const h = Math.floor((sec % 86400) / 3600);
+  return d > 0 ? `${d}d ${h}h` : `${h}h`;
+}
+```
 
-`types.ts`:
+- [ ] **Step 8: shadcn/ui**
+
+```bash
+cd web
+npx shadcn@latest init      # style: default; base color: neutral; CSS vars: yes; alias @/components
+npx shadcn@latest add card skeleton alert table button sheet tooltip sonner separator badge scroll-area
+```
+
+Commit `components.json` and the generated `src/components/ui/*`. If `init` rewrites
+`src/index.css`, re-apply the `@theme` block from Step 6 on top of what it generates.
+
+- [ ] **Step 9: `web/src/api/types.ts`**
+
 ```ts
 export interface Meta { generated_at: string; stale: boolean }
 export interface Envelope<T> { data: T; meta: Meta }
-export interface ApiError { error: { code: string; message: string } }
 
 export interface LabeledCount { label: string; count: number }
 export interface DiskBucket { bucket: string; bytes: number; items: number }
-export interface GrowthPoint {
-  month: string; added_items: number; added_bytes: number; cum_items: number;
-}
+export interface GrowthPoint { month: string; added_items: number; added_bytes: number; cum_items: number }
+
 export interface LibraryOverview {
   totals: {
     items_by_library: LabeledCount[];
@@ -3778,7 +3838,8 @@ export interface LibraryOverview {
 }
 ```
 
-`client.ts`:
+- [ ] **Step 10: `web/src/api/client.ts`**
+
 ```ts
 import type { Envelope } from "./types";
 
@@ -3796,142 +3857,210 @@ export async function fetchEnvelope<T>(path: string): Promise<Envelope<T>> {
   const res = await fetch(path, { headers: { Accept: "application/json" } });
   const body = await res.json().catch(() => null);
   if (!res.ok) {
-    const code = body?.error?.code ?? "http_error";
-    const message = body?.error?.message ?? `request failed (${res.status})`;
-    throw new ApiRequestError(res.status, code, message);
+    throw new ApiRequestError(
+      res.status,
+      body?.error?.code ?? "http_error",
+      body?.error?.message ?? `request failed (${res.status})`,
+    );
   }
   return body as Envelope<T>;
 }
 ```
 
-- [ ] **Step 4: Create `web/src/theme.ts` and `web/src/main.tsx`**
+- [ ] **Step 11: `web/src/api/queries.ts`**
 
-`theme.ts`:
 ```ts
-import { createTheme } from "@mantine/core";
+import { queryOptions } from "@tanstack/react-query";
+import { fetchEnvelope } from "./client";
+import type { LibraryOverview } from "./types";
 
-export const theme = createTheme({
-  primaryColor: "grape",
-  defaultRadius: "md",
-});
+export const libraryOverviewQuery = () =>
+  queryOptions({
+    queryKey: ["library-overview"],
+    queryFn: () => fetchEnvelope<LibraryOverview>("/api/library/overview"),
+    staleTime: 30 * 60 * 1000,
+  });
 ```
 
-`main.tsx`:
+- [ ] **Step 12: ECharts wrapper**
+
+`web/src/charts/theme.ts`:
+```ts
+// Colors read from CSS custom properties at init time so the ECharts theme
+// tracks the Tailwind @theme tokens (and dark mode).
+function cssVar(name: string, fallback: string): string {
+  if (typeof window === "undefined") return fallback;
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return v || fallback;
+}
+
+export function ephyraEChartsTheme() {
+  const fg = cssVar("--color-fg", "#222");
+  const muted = cssVar("--color-muted", "#888");
+  const border = cssVar("--color-border", "#e5e5e5");
+  const accent = cssVar("--color-accent", "#8b5cf6");
+  return {
+    color: [accent, "#22d3ee", "#f59e0b", "#34d399", "#f472b6", "#60a5fa"],
+    textStyle: { fontFamily: "var(--font-sans)", color: fg },
+    grid: { left: 8, right: 16, top: 24, bottom: 8, containLabel: true },
+    categoryAxis: {
+      axisLine: { lineStyle: { color: border } },
+      axisTick: { show: false },
+      axisLabel: { color: muted },
+      splitLine: { show: false },
+    },
+    valueAxis: {
+      axisLine: { show: false },
+      axisTick: { show: false },
+      axisLabel: { color: muted },
+      splitLine: { lineStyle: { color: border } },
+    },
+    tooltip: {
+      backgroundColor: cssVar("--color-surface", "#fff"),
+      borderColor: border,
+      textStyle: { color: fg },
+    },
+  };
+}
+```
+
+`web/src/charts/echarts.ts`:
+```ts
+import * as echarts from "echarts/core";
+import { BarChart, LineChart, HeatmapChart } from "echarts/charts";
+import {
+  GridComponent,
+  TooltipComponent,
+  LegendComponent,
+  VisualMapComponent,
+  DatasetComponent,
+} from "echarts/components";
+import { CanvasRenderer } from "echarts/renderers";
+import { ephyraEChartsTheme } from "./theme";
+
+echarts.use([
+  BarChart, LineChart, HeatmapChart,
+  GridComponent, TooltipComponent, LegendComponent, VisualMapComponent, DatasetComponent,
+  CanvasRenderer,
+]);
+
+let registered = false;
+export function ensureTheme() {
+  if (!registered) {
+    echarts.registerTheme("ephyra", ephyraEChartsTheme());
+    registered = true;
+  }
+}
+export { echarts };
+```
+
+`web/src/charts/EChart.tsx`:
 ```tsx
-import { MantineProvider } from "@mantine/core";
-import "@mantine/core/styles.css";
-import "@mantine/charts/styles.css";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import React from "react";
-import ReactDOM from "react-dom/client";
-import { Navigate, Route, BrowserRouter, Routes } from "react-router-dom";
-import { AppShell } from "./components/AppShell";
-import { LibraryOverview } from "./pages/LibraryOverview";
-import { Placeholder } from "./pages/Placeholder";
-import { theme } from "./theme";
+import { useEffect, useRef } from "react";
+import type { EChartsCoreOption } from "echarts/core";
+import { echarts, ensureTheme } from "./echarts";
 
-const qc = new QueryClient({
-  defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: true } },
-});
+export function EChart({ option, height = 260, className }: {
+  option: EChartsCoreOption;
+  height?: number;
+  className?: string;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const chart = useRef<echarts.ECharts | null>(null);
 
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <React.StrictMode>
-    <MantineProvider theme={theme} defaultColorScheme="auto">
-      <QueryClientProvider client={qc}>
-        <BrowserRouter>
-          <AppShell>
-            <Routes>
-              <Route path="/" element={<Navigate to="/library" replace />} />
-              <Route path="/library" element={<LibraryOverview />} />
-              <Route path="/watch" element={<Placeholder title="Watch Stats" />} />
-              <Route path="/now" element={<Placeholder title="Now Playing" />} />
-              <Route path="/cleanup" element={<Placeholder title="Cleanup" />} />
-            </Routes>
-          </AppShell>
-        </BrowserRouter>
-      </QueryClientProvider>
-    </MantineProvider>
-  </React.StrictMode>,
-);
+  useEffect(() => {
+    if (!ref.current) return;
+    ensureTheme();
+    chart.current = echarts.init(ref.current, "ephyra");
+    const ro = new ResizeObserver(() => chart.current?.resize());
+    ro.observe(ref.current);
+    return () => {
+      ro.disconnect();
+      chart.current?.dispose();
+      chart.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    chart.current?.setOption(option, true);
+  }, [option]);
+
+  return <div ref={ref} style={{ height }} className={className} role="img" />;
+}
 ```
 
-- [ ] **Step 5: Create the components**
+- [ ] **Step 13: Shell + small components**
 
 `web/src/components/AppShell.tsx`:
 ```tsx
-import { AppShell as MantineAppShell, Burger, Group, NavLink, Text } from "@mantine/core";
-import { useDisclosure } from "@mantine/hooks";
-import type { ReactNode } from "react";
-import { NavLink as RouterNavLink } from "react-router-dom";
+import { Link, useRouterState } from "@tanstack/react-router";
+import { Library, PlayCircle, BarChart3, Trash2 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
-const links = [
-  { to: "/library", label: "Library" },
-  { to: "/watch", label: "Watch Stats" },
-  { to: "/now", label: "Now Playing" },
-  { to: "/cleanup", label: "Cleanup" },
+const nav = [
+  { to: "/library", label: "Library", icon: Library },
+  { to: "/watch", label: "Watch Stats", icon: BarChart3 },
+  { to: "/now", label: "Now Playing", icon: PlayCircle },
+  { to: "/cleanup", label: "Cleanup", icon: Trash2 },
 ];
 
-export function AppShell({ children }: { children: ReactNode }) {
-  const [opened, { toggle }] = useDisclosure();
+export function AppShell({ children }: { children: React.ReactNode }) {
+  const path = useRouterState({ select: (s) => s.location.pathname });
   return (
-    <MantineAppShell
-      header={{ height: 56 }}
-      navbar={{ width: 220, breakpoint: "sm", collapsed: { mobile: !opened } }}
-      padding="md"
-    >
-      <MantineAppShell.Header>
-        <Group h="100%" px="md" gap="sm">
-          <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
-          <Text fw={700}>Ephyra</Text>
-        </Group>
-      </MantineAppShell.Header>
-      <MantineAppShell.Navbar p="sm">
-        {links.map((l) => (
-          <NavLink
-            key={l.to}
-            component={RouterNavLink}
-            to={l.to}
-            label={l.label}
-            onClick={() => opened && toggle()}
-          />
-        ))}
-      </MantineAppShell.Navbar>
-      <MantineAppShell.Main>{children}</MantineAppShell.Main>
-    </MantineAppShell>
+    <div className="grid min-h-full grid-cols-[220px_1fr] max-md:grid-cols-1">
+      <aside className="border-r border-[--color-border] p-4 max-md:hidden">
+        <div className="mb-6 px-2 text-lg font-bold tracking-tight">Ephyra</div>
+        <nav className="flex flex-col gap-1">
+          {nav.map(({ to, label, icon: Icon }) => (
+            <Link
+              key={to}
+              to={to}
+              className={cn(
+                "flex items-center gap-2 rounded-[--radius] px-3 py-2 text-sm text-[--color-muted] hover:bg-[--color-surface]",
+                path.startsWith(to) && "bg-[--color-surface] font-medium text-[--color-fg]",
+              )}
+            >
+              <Icon size={16} />
+              {label}
+            </Link>
+          ))}
+        </nav>
+      </aside>
+      <main className="p-6 max-md:p-4">{children}</main>
+    </div>
   );
 }
 ```
 
 `web/src/components/StatCard.tsx`:
 ```tsx
-import { Card, Text } from "@mantine/core";
+import { Card, CardContent } from "@/components/ui/card";
 
 export function StatCard({ label, value }: { label: string; value: string }) {
   return (
-    <Card withBorder padding="md" role="group" aria-label={label}>
-      <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
-        {label}
-      </Text>
-      <Text size="xl" fw={700}>
-        {value}
-      </Text>
+    <Card>
+      <CardContent className="p-4">
+        <div className="text-xs font-semibold uppercase tracking-wide text-[--color-muted]" aria-label={label}>
+          {label}
+        </div>
+        <div className="mt-1 text-2xl font-bold tabular-nums">{value}</div>
+      </CardContent>
     </Card>
   );
 }
 ```
 
-`web/src/components/ChartCard.tsx`:
+`web/src/components/Section.tsx`:
 ```tsx
-import { Card, Text } from "@mantine/core";
-import type { ReactNode } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-export function ChartCard({ title, children }: { title: string; children: ReactNode }) {
+export function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <Card withBorder padding="md">
-      <Text fw={600} mb="sm">
-        {title}
-      </Text>
-      {children}
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-semibold">{title}</CardTitle>
+      </CardHeader>
+      <CardContent>{children}</CardContent>
     </Card>
   );
 }
@@ -3939,50 +4068,260 @@ export function ChartCard({ title, children }: { title: string; children: ReactN
 
 `web/src/components/StaleBanner.tsx`:
 ```tsx
-import { Alert } from "@mantine/core";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export function StaleBanner() {
   return (
-    <Alert color="yellow" variant="light" mb="md" role="status">
-      Data is catching up — showing the last successful refresh.
+    <Alert role="status" className="mb-4">
+      <AlertDescription>Data is catching up — showing the last successful refresh.</AlertDescription>
     </Alert>
   );
 }
 ```
 
-`web/src/pages/Placeholder.tsx`:
-```tsx
-import { Text, Title } from "@mantine/core";
+- [ ] **Step 14: Routes + router + entry**
 
-export function Placeholder({ title }: { title: string }) {
+`web/src/routes/__root.tsx`:
+```tsx
+import { createRootRoute, Outlet } from "@tanstack/react-router";
+import { AppShell } from "@/components/AppShell";
+
+export const Route = createRootRoute({
+  component: () => (
+    <AppShell>
+      <Outlet />
+    </AppShell>
+  ),
+});
+```
+
+`web/src/routes/watch.tsx`, `now.tsx`, `cleanup.tsx` — placeholder pattern (repeat per file, changing `path` and title):
+```tsx
+import { createRoute } from "@tanstack/react-router";
+import { Route as rootRoute } from "./__root";
+
+export const Route = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/watch",
+  component: () => (
+    <div>
+      <h2 className="text-xl font-bold">Watch Stats</h2>
+      <p className="mt-2 text-[--color-muted]">Available in a later build.</p>
+    </div>
+  ),
+});
+```
+
+`web/src/routes/library.tsx`:
+```tsx
+import { createRoute } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import { Route as rootRoute } from "./__root";
+import { libraryOverviewQuery } from "@/api/queries";
+import { StatCard } from "@/components/StatCard";
+import { Section } from "@/components/Section";
+import { StaleBanner } from "@/components/StaleBanner";
+import { EChart } from "@/charts/EChart";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
+import { fmtBytes, fmtDuration } from "@/lib/format";
+
+const GB = 1024 ** 3;
+
+function LibraryOverview() {
+  const q = useQuery(libraryOverviewQuery());
+
+  if (q.isLoading) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-8 w-48" />
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-20" />
+          ))}
+        </div>
+        <Skeleton className="h-64" />
+      </div>
+    );
+  }
+  if (q.isError) {
+    return (
+      <Alert variant="destructive">
+        <AlertTitle>Could not load library stats</AlertTitle>
+        <AlertDescription>{(q.error as Error).message}</AlertDescription>
+      </Alert>
+    );
+  }
+
+  const { data, meta } = q.data;
+  const t = data.totals;
+  const bar = (rows: { name: string; value: number }[], unit: string) => ({
+    tooltip: { trigger: "axis", valueFormatter: (v: number) => `${v} ${unit}` },
+    xAxis: { type: "category", data: rows.map((r) => r.name) },
+    yAxis: { type: "value" },
+    series: [{ type: "bar", data: rows.map((r) => r.value), barMaxWidth: 40, itemStyle: { borderRadius: [4, 4, 0, 0] } }],
+  });
+
   return (
-    <>
-      <Title order={2}>{title}</Title>
-      <Text c="dimmed" mt="sm">
-        Available in a later build.
-      </Text>
-    </>
+    <div className="space-y-6">
+      <h2 className="text-xl font-bold tracking-tight">Library Overview</h2>
+      {meta.stale && <StaleBanner />}
+
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+        <StatCard label="Total items" value={String(t.items)} />
+        <StatCard label="Series" value={String(t.series)} />
+        <StatCard label="Runtime" value={fmtDuration(t.runtime_seconds)} />
+        <StatCard label="On disk" value={fmtBytes(t.bytes)} />
+        <StatCard label="4K / HDR" value={`${t.count_uhd} / ${t.count_hdr}`} />
+        <StatCard label="Dolby Vision" value={String(t.count_dv)} />
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <Section title="Disk by resolution">
+          <EChart option={bar(data.disk_by_resolution.map((d) => ({ name: d.bucket, value: Math.round(d.bytes / GB) })), "GB")} />
+        </Section>
+        <Section title="Disk by codec">
+          <EChart option={bar(data.disk_by_codec.map((d) => ({ name: d.bucket, value: Math.round(d.bytes / GB) })), "GB")} />
+        </Section>
+        <Section title="Top genres">
+          <EChart option={bar(data.genres_top.map((g) => ({ name: g.label, value: g.count })), "items")} />
+        </Section>
+        <Section title="Titles by decade">
+          <EChart option={bar(data.by_decade.map((d) => ({ name: d.label, value: d.count })), "items")} />
+        </Section>
+        <div className="md:col-span-2">
+          <Section title="Library growth">
+            <EChart
+              height={300}
+              option={{
+                tooltip: { trigger: "axis" },
+                legend: { data: ["Added", "Cumulative"] },
+                xAxis: { type: "category", data: data.growth.map((g) => g.month) },
+                yAxis: [{ type: "value" }, { type: "value" }],
+                series: [
+                  { name: "Added", type: "bar", data: data.growth.map((g) => g.added_items), barMaxWidth: 24 },
+                  { name: "Cumulative", type: "line", yAxisIndex: 1, smooth: true, data: data.growth.map((g) => g.cum_items) },
+                ],
+              }}
+            />
+          </Section>
+        </div>
+      </div>
+    </div>
   );
+}
+
+export const Route = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/library",
+  component: LibraryOverview,
+});
+```
+
+`web/src/router.tsx`:
+```tsx
+import { createRouter, createRoute, redirect } from "@tanstack/react-router";
+import { Route as rootRoute } from "./routes/__root";
+import { Route as libraryRoute } from "./routes/library";
+import { Route as watchRoute } from "./routes/watch";
+import { Route as nowRoute } from "./routes/now";
+import { Route as cleanupRoute } from "./routes/cleanup";
+
+const indexRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/",
+  beforeLoad: () => {
+    throw redirect({ to: "/library" });
+  },
+});
+
+const routeTree = rootRoute.addChildren([indexRoute, libraryRoute, watchRoute, nowRoute, cleanupRoute]);
+
+export const router = createRouter({ routeTree, defaultPreload: "intent" });
+
+declare module "@tanstack/react-router" {
+  interface Register {
+    router: typeof router;
+  }
 }
 ```
 
-- [ ] **Step 6: Write the failing test** — `web/src/pages/LibraryOverview.test.tsx`
+`web/src/main.tsx`:
+```tsx
+import React from "react";
+import ReactDOM from "react-dom/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { RouterProvider } from "@tanstack/react-router";
+import { Toaster } from "@/components/ui/sonner";
+import { router } from "./router";
+import "./index.css";
+
+const qc = new QueryClient({
+  defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: true } },
+});
+
+ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+  <React.StrictMode>
+    <QueryClientProvider client={qc}>
+      <RouterProvider router={router} />
+      <Toaster />
+    </QueryClientProvider>
+  </React.StrictMode>,
+);
+```
+
+- [ ] **Step 15: `web/src/test/setup.ts`**
+
+```ts
+import "@testing-library/jest-dom/vitest";
+import { vi } from "vitest";
+
+class RO {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+vi.stubGlobal("ResizeObserver", RO);
+
+if (!window.matchMedia) {
+  window.matchMedia = () =>
+    ({
+      matches: false,
+      addEventListener() {},
+      removeEventListener() {},
+      addListener() {},
+      removeListener() {},
+      dispatchEvent() {
+        return false;
+      },
+    }) as unknown as MediaQueryList;
+}
+```
+
+- [ ] **Step 16: Write the failing test** — `web/src/routes/library.test.tsx`
+
+> ECharts needs a real canvas; in jsdom we mock the `EChart` component so page
+> tests exercise data → props, not canvas rendering.
 
 ```tsx
-import { MantineProvider } from "@mantine/core";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, expect, test, vi } from "vitest";
-import type { Envelope, LibraryOverview as LO } from "../api/types";
-import { LibraryOverview } from "./LibraryOverview";
+import type { Envelope, LibraryOverview as LO } from "@/api/types";
+
+vi.mock("@/charts/EChart", () => ({
+  EChart: ({ option }: { option: unknown }) => (
+    <div data-testid="echart" data-series={JSON.stringify((option as any).series?.length ?? 0)} />
+  ),
+}));
+
+// import AFTER the mock
+const { Route } = await import("./library");
+const LibraryOverview = Route.options.component as React.ComponentType;
 
 function wrap(ui: React.ReactNode) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return (
-    <MantineProvider>
-      <QueryClientProvider client={qc}>{ui}</QueryClientProvider>
-    </MantineProvider>
-  );
+  return <QueryClientProvider client={qc}>{ui}</QueryClientProvider>;
 }
 
 const sample: Envelope<LO> = {
@@ -3992,10 +4331,10 @@ const sample: Envelope<LO> = {
       runtime_seconds: 36000, bytes: 29_500_000_000,
       count_uhd: 2, count_hdr: 3, count_dv: 1, series: 3, items: 6,
     },
-    disk_by_resolution: [{ bucket: "4K", bytes: 23_000_000_000, items: 2 }],
-    disk_by_codec: [{ bucket: "HEVC", bytes: 23_000_000_000, items: 2 }],
-    disk_by_container: [{ bucket: "mkv", bytes: 25_000_000_000, items: 4 }],
-    disk_by_library: [{ bucket: "Movies", bytes: 27_000_000_000, items: 4 }],
+    disk_by_resolution: [{ bucket: "4K", bytes: 23e9, items: 2 }],
+    disk_by_codec: [{ bucket: "HEVC", bytes: 23e9, items: 2 }],
+    disk_by_container: [{ bucket: "mkv", bytes: 25e9, items: 4 }],
+    disk_by_library: [{ bucket: "Movies", bytes: 27e9, items: 4 }],
     genres_top: [{ label: "Drama", count: 4 }],
     by_decade: [{ label: "1990s", count: 1 }],
     growth: [{ month: "2024-01", added_items: 2, added_bytes: 12e9, cum_items: 2 }],
@@ -4005,18 +4344,16 @@ const sample: Envelope<LO> = {
 
 afterEach(() => vi.restoreAllMocks());
 
-test("renders totals after load", async () => {
-  vi.spyOn(globalThis, "fetch").mockResolvedValue(
-    new Response(JSON.stringify(sample), { status: 200 }),
-  );
+test("renders totals + charts after load", async () => {
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify(sample), { status: 200 }));
   render(wrap(<LibraryOverview />));
-  expect(screen.getByText(/loading/i)).toBeInTheDocument();
-  await waitFor(() => expect(screen.getByLabelText(/total items/i)).toBeInTheDocument());
-  expect(screen.getByLabelText(/total items/i)).toHaveTextContent("6");
-  expect(screen.queryByRole("status")).not.toBeInTheDocument(); // no stale banner
+  await waitFor(() => expect(screen.getByLabelText("Total items")).toBeInTheDocument());
+  expect(screen.getByLabelText("Total items").parentElement).toHaveTextContent("6");
+  expect(screen.getAllByTestId("echart").length).toBeGreaterThanOrEqual(5);
+  expect(screen.queryByRole("status")).not.toBeInTheDocument();
 });
 
-test("shows stale banner when meta.stale", async () => {
+test("stale banner when meta.stale", async () => {
   vi.spyOn(globalThis, "fetch").mockResolvedValue(
     new Response(JSON.stringify({ ...sample, meta: { ...sample.meta, stale: true } }), { status: 200 }),
   );
@@ -4024,7 +4361,7 @@ test("shows stale banner when meta.stale", async () => {
   await waitFor(() => expect(screen.getByRole("status")).toBeInTheDocument());
 });
 
-test("shows error state on 503", async () => {
+test("error state on 503", async () => {
   vi.spyOn(globalThis, "fetch").mockResolvedValue(
     new Response(JSON.stringify({ error: { code: "not_ready", message: "first refresh has not completed" } }), { status: 503 }),
   );
@@ -4033,143 +4370,17 @@ test("shows error state on 503", async () => {
 });
 ```
 
-- [ ] **Step 7: Run test to verify it fails**
-
-Run: `cd web && npm install && npm run test`
-Expected: FAIL — `./LibraryOverview` has no export `LibraryOverview`.
-
-- [ ] **Step 8: Implement `web/src/pages/LibraryOverview.tsx`**
-
-```tsx
-import { Alert, Grid, Loader, SimpleGrid, Stack, Title } from "@mantine/core";
-import { BarChart, AreaChart } from "@mantine/charts";
-import { useQuery } from "@tanstack/react-query";
-import { fetchEnvelope } from "../api/client";
-import type { LibraryOverview as LO } from "../api/types";
-import { ChartCard } from "../components/ChartCard";
-import { StatCard } from "../components/StatCard";
-import { StaleBanner } from "../components/StaleBanner";
-
-const GB = 1024 ** 3;
-
-function fmtBytes(n: number): string {
-  if (n >= 1024 ** 4) return `${(n / 1024 ** 4).toFixed(1)} TB`;
-  return `${(n / GB).toFixed(0)} GB`;
-}
-function fmtDuration(sec: number): string {
-  const days = Math.floor(sec / 86400);
-  const hours = Math.floor((sec % 86400) / 3600);
-  return days > 0 ? `${days}d ${hours}h` : `${hours}h`;
-}
-
-export function LibraryOverview() {
-  const q = useQuery({
-    queryKey: ["library-overview"],
-    queryFn: () => fetchEnvelope<LO>("/api/library/overview"),
-    staleTime: 30 * 60 * 1000,
-  });
-
-  if (q.isLoading) {
-    return (
-      <Stack align="center" mt="xl">
-        <Loader />
-        <span>Loading…</span>
-      </Stack>
-    );
-  }
-  if (q.isError) {
-    return (
-      <Alert color="red" title="Could not load library stats">
-        {(q.error as Error).message}
-      </Alert>
-    );
-  }
-
-  const { data, meta } = q.data;
-  const t = data.totals;
-
-  return (
-    <Stack>
-      <Title order={2}>Library Overview</Title>
-      {meta.stale && <StaleBanner />}
-
-      <SimpleGrid cols={{ base: 2, sm: 3, lg: 6 }}>
-        <StatCard label="Total items" value={String(t.items)} />
-        <StatCard label="Series" value={String(t.series)} />
-        <StatCard label="Runtime" value={fmtDuration(t.runtime_seconds)} />
-        <StatCard label="On disk" value={fmtBytes(t.bytes)} />
-        <StatCard label="4K / HDR" value={`${t.count_uhd} / ${t.count_hdr}`} />
-        <StatCard label="Dolby Vision" value={String(t.count_dv)} />
-      </SimpleGrid>
-
-      <Grid>
-        <Grid.Col span={{ base: 12, md: 6 }}>
-          <ChartCard title="Disk by resolution">
-            <BarChart
-              h={220}
-              data={data.disk_by_resolution.map((d) => ({ name: d.bucket, GB: Math.round(d.bytes / GB) }))}
-              dataKey="name"
-              series={[{ name: "GB", color: "grape.6" }]}
-            />
-          </ChartCard>
-        </Grid.Col>
-        <Grid.Col span={{ base: 12, md: 6 }}>
-          <ChartCard title="Disk by codec">
-            <BarChart
-              h={220}
-              data={data.disk_by_codec.map((d) => ({ name: d.bucket, GB: Math.round(d.bytes / GB) }))}
-              dataKey="name"
-              series={[{ name: "GB", color: "blue.6" }]}
-            />
-          </ChartCard>
-        </Grid.Col>
-        <Grid.Col span={{ base: 12, md: 6 }}>
-          <ChartCard title="Top genres">
-            <BarChart
-              h={260}
-              orientation="vertical"
-              data={data.genres_top.map((g) => ({ name: g.label, items: g.count }))}
-              dataKey="name"
-              series={[{ name: "items", color: "teal.6" }]}
-            />
-          </ChartCard>
-        </Grid.Col>
-        <Grid.Col span={{ base: 12, md: 6 }}>
-          <ChartCard title="Titles by decade">
-            <BarChart
-              h={260}
-              data={data.by_decade.map((d) => ({ name: d.label, items: d.count }))}
-              dataKey="name"
-              series={[{ name: "items", color: "orange.6" }]}
-            />
-          </ChartCard>
-        </Grid.Col>
-        <Grid.Col span={12}>
-          <ChartCard title="Library growth">
-            <AreaChart
-              h={260}
-              data={data.growth.map((g) => ({ month: g.month, "Cumulative items": g.cum_items, "Added": g.added_items }))}
-              dataKey="month"
-              series={[
-                { name: "Cumulative items", color: "grape.5" },
-                { name: "Added", color: "grape.8" },
-              ]}
-              curveType="linear"
-            />
-          </ChartCard>
-        </Grid.Col>
-      </Grid>
-    </Stack>
-  );
-}
-```
-
-- [ ] **Step 9: Run test to verify it passes**
+- [ ] **Step 17: Run test to verify it fails**
 
 Run: `cd web && npm run test`
-Expected: PASS (3 tests). Then `npm run lint` (Biome) clean, and `npm run build` emits `web/dist/index.html` + assets.
+Expected: FAIL — `./library` has no usable `Route.options.component` / imports unresolved until Steps 9–14 land. (If you built Steps 9–14 first, it fails only on assertions.)
 
-- [ ] **Step 10: Add the `web` CI job** — append to `.github/workflows/ci.yml` under `jobs:`
+- [ ] **Step 18: Implement Steps 9–14 as written; run test to pass**
+
+Run: `cd web && npm run test`
+Expected: PASS (3 tests). Then `npm run lint` (Biome) clean and `npm run build` emits `web/dist/index.html` + hashed assets. Manually `npm run dev`, open `http://localhost:5173/library` with the Go server running — the page renders against live data.
+
+- [ ] **Step 19: Add the `web` CI job** — append to `.github/workflows/ci.yml` under `jobs:`
 
 ```yaml
   web:
@@ -4185,11 +4396,11 @@ Expected: PASS (3 tests). Then `npm run lint` (Biome) clean, and `npm run build`
       - run: npm run build
 ```
 
-- [ ] **Step 11: Commit**
+- [ ] **Step 20: Commit**
 
 ```bash
 git add web .github/workflows/ci.yml
-git commit -m "feat(web): Vite/React/Mantine shell + Library Overview page"
+git commit -m "feat(web): Tailwind v4 + shadcn/ui shell, TanStack Router, ECharts, Library Overview"
 ```
 
 ---
@@ -4335,7 +4546,7 @@ git commit -m "build: Dockerfile (distroless), compose example, README, docker C
 | §8.2 `GET /api/library/overview` (all tiles + charts) | Tasks 6–9, 11 |
 | §8.6 `POST /api/refresh` | Task 9 (minimal; full button wiring is Plan 3, noted) |
 | §8.7 `GET /healthz` | Task 9 |
-| §10 frontend (shell, routes, Library page, loading/error/stale states, Mantine charts) | Task 11 |
+| §10 frontend (shell, routes, Library page, loading/error/stale states, ECharts) | Task 11 |
 | §11 config (all vars) | Task 1 |
 | §12 packaging (3-stage Dockerfile, compose, footprint) | Task 12 |
 | §13 observability (`slog` JSON, per-refresh log line, `/healthz`) | Tasks 8–10 |
@@ -4366,7 +4577,7 @@ No `TBD`/`TODO`/"implement later"/"add error handling"/"similar to Task N". Ever
 - Real `library.db` column names/`type` strings vs the baseline — Task 2 checklist; adjust `testdata/library.fixture.sql` + `internal/source/file/queries.go` together, tests then guard behavior.
 - `TopParentId` encoding (dashes/case) — Task 2; the query uses `upper(replace(...,'-',''))` to be tolerant.
 - `DateCreated` string format — `parseJellyfinTime` tries six layouts; add one if the operator's dump shows another.
-- Mantine 7 / `@mantine/charts` prop names (`series` color format, `orientation`) — pin exact versions in `package.json`; if a prop differs in the installed minor, the Vitest render test will fail fast.
+- Frontend deps float to current majors (`npm install` at scaffold time). If TanStack Router's route-tree API or a shadcn component path shifts under the installed version, the Vitest render test and `tsc -b` fail fast. ECharts option shapes in `library.tsx` are plain objects — adjust against the installed `echarts` major if a series type is renamed.
 
 ---
 
