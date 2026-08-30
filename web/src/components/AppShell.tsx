@@ -1,7 +1,19 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { BarChart3, Layers, PlayCircle, Trash2 } from "lucide-react";
 import type { ReactNode } from "react";
+import { Mark } from "@/components/Mark";
 import { cn } from "@/lib/utils";
+
+function Wordmark({ markSize = 18, text = "text-[19px]" }: { markSize?: number; text?: string }) {
+  return (
+    <span className="flex items-center gap-2">
+      <Mark size={markSize} className="drop-shadow-[0_0_8px_rgba(79,224,216,0.4)]" />
+      <span className={cn("font-display font-bold lowercase tracking-[-0.03em] text-ink", text)}>
+        ephyra
+      </span>
+    </span>
+  );
+}
 
 const NAV = [
   { to: "/library", label: "Library", icon: Layers },
@@ -17,8 +29,8 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div className="ambient min-h-dvh">
       <div className="mx-auto min-h-dvh max-w-[1180px] md:grid md:grid-cols-[212px_1fr]">
         <aside className="hidden border-r border-line/70 px-4 py-6 md:block">
-          <div className="mb-8 px-2 font-display text-[19px] font-bold tracking-[-0.03em] text-ink">
-            Ephyra
+          <div className="mb-8 px-2">
+            <Wordmark />
           </div>
           <nav className="flex flex-col gap-1">
             {NAV.map(({ to, label, icon: Icon }) => {
@@ -42,7 +54,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
         <main className="min-w-0 px-5 py-6 md:px-9 md:py-8">
           <div className="mb-5 flex items-center gap-4 md:hidden">
-            <span className="font-display text-lg font-bold text-ink">Ephyra</span>
+            <Wordmark markSize={16} text="text-lg" />
             <nav className="flex gap-1 overflow-x-auto">
               {NAV.map(({ to, label }) => {
                 const active = path.startsWith(to);
