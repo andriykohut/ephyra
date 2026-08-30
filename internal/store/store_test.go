@@ -18,8 +18,8 @@ func TestOpenAppliesMigrationsIdempotently(t *testing.T) {
 	if err := s1.DB().QueryRowContext(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
-	if n != 1 {
-		t.Fatalf("want 1 applied migration, got %d", n)
+	if n != 2 {
+		t.Fatalf("want 2 applied migrations, got %d", n)
 	}
 	if err := s1.Close(); err != nil {
 		t.Fatal(err)
@@ -75,5 +75,39 @@ func TestRefreshMetaRoundTrip(t *testing.T) {
 	got, _, _ = s.GetRefreshMeta(ctx, "library")
 	if got.DurationMS != 5 {
 		t.Fatalf("upsert failed, duration=%d", got.DurationMS)
+	}
+}
+
+func TestMigration0002Redefinitions(t *testing.T) {
+	ctx := context.Background()
+	s, err := Open(ctx, t.TempDir()+"/s.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	for _, table := range []string{"dim_user", "agg_played_core"} {
+		if _, err := s.DB().ExecContext(ctx, `SELECT 1 FROM `+table+` LIMIT 1`); err != nil {
+			t.Errorf("%s missing: %v", table, err)
+		}
+	}
+	if _, err := s.DB().ExecContext(ctx,
+		`SELECT series_id, series_name FROM watch_events_daily LIMIT 1`); err != nil {
+		t.Errorf("watch_events_daily.series_* missing: %v", err)
+	}
+	if _, err := s.DB().ExecContext(ctx,
+		`SELECT user_id FROM agg_watch_heatmap LIMIT 1`); err != nil {
+		t.Errorf("agg_watch_heatmap.user_id missing: %v", err)
+	}
+	if _, err := s.DB().ExecContext(ctx,
+		`SELECT scope, episodes FROM agg_cleanup LIMIT 1`); err != nil {
+		t.Errorf("agg_cleanup.scope/episodes missing: %v", err)
+	}
+	var n int
+	if err := s.DB().QueryRowContext(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Fatalf("want 2 migrations applied, got %d", n)
 	}
 }

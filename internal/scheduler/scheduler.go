@@ -90,7 +90,7 @@ func (s *Scheduler) RunLibraryOnce(ctx context.Context) error {
 		return s.recordFailure(ctx, mt, start, err)
 	}
 	agg := aggregate.Library(snap, time.Local)
-	if err := s.st.WriteLibraryAggregates(ctx, agg); err != nil {
+	if err := s.st.WriteLibraryAggregates(ctx, agg, nil, nil, nil); err != nil {
 		return s.recordFailure(ctx, mt, start, err)
 	}
 	s.log.Info("library refresh ok",

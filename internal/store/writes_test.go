@@ -46,7 +46,7 @@ func TestWriteThenReadLibraryOverview(t *testing.T) {
 	}
 	defer s.Close()
 
-	if err := s.WriteLibraryAggregates(ctx, sampleAggregates()); err != nil {
+	if err := s.WriteLibraryAggregates(ctx, sampleAggregates(), nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	ov, err := s.ReadLibraryOverview(ctx)
@@ -75,11 +75,56 @@ func TestWriteThenReadLibraryOverview(t *testing.T) {
 	repl := sampleAggregates()
 	repl.Totals["bytes.total"] = 1
 	repl.Growth = []aggregate.GrowthPoint{{Month: "2024-05", AddedItems: 1, AddedBytes: 1, CumItems: 1}}
-	if err := s.WriteLibraryAggregates(ctx, repl); err != nil {
+	if err := s.WriteLibraryAggregates(ctx, repl, nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	ov, _ = s.ReadLibraryOverview(ctx)
 	if ov.Totals.Bytes != 1 || len(ov.Growth) != 1 || ov.Growth[0].Month != "2024-05" {
 		t.Fatalf("replace failed: %+v", ov)
+	}
+}
+
+func TestWriteLibraryExtrasRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	s, err := Open(ctx, t.TempDir()+"/s.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	base := aggregate.LibraryAggregates{Totals: map[string]float64{"items.total": 1}}
+	cleanup := []aggregate.CleanupRow{
+		{ItemID: "m1", Scope: "movie", Name: "Alpha", Library: "Movies", Bytes: 900, AddedAt: "2024-01-01T00:00:00Z"}, // never
+		{ItemID: "s1", Scope: "series", Name: "Show", Library: "Shows", Bytes: 500, Episodes: 12,
+			AddedAt: "2020-01-01T00:00:00Z", LastPlayedAt: "2023-06-01T00:00:00Z"},
+	}
+	users := []aggregate.UserRow{{ID: "u1", Name: "alice"}}
+	core := []aggregate.CorePlayRow{{UserID: "u1", Scope: "movie", ItemID: "m1", Name: "Alpha", PlayCount: 3}}
+
+	if err := s.WriteLibraryAggregates(ctx, base, cleanup, users, core); err != nil {
+		t.Fatal(err)
+	}
+
+	var cn, un, corn int
+	s.DB().QueryRowContext(ctx, `SELECT count(*) FROM agg_cleanup`).Scan(&cn)
+	s.DB().QueryRowContext(ctx, `SELECT count(*) FROM dim_user`).Scan(&un)
+	s.DB().QueryRowContext(ctx, `SELECT count(*) FROM agg_played_core`).Scan(&corn)
+	if cn != 2 || un != 1 || corn != 1 {
+		t.Fatalf("counts cleanup=%d users=%d core=%d", cn, un, corn)
+	}
+	// "" LastPlayedAt reads back as NULL
+	var last *string
+	if err := s.DB().QueryRowContext(ctx, `SELECT last_played_at FROM agg_cleanup WHERE item_id='m1'`).Scan(&last); err != nil {
+		t.Fatal(err)
+	}
+	if last != nil {
+		t.Fatalf("empty last_played_at should be NULL, got %q", *last)
+	}
+	// core last_played_at NULL too
+	if err := s.DB().QueryRowContext(ctx, `SELECT last_played_at FROM agg_played_core WHERE item_id='m1'`).Scan(&last); err != nil {
+		t.Fatal(err)
+	}
+	if last != nil {
+		t.Fatalf("core last_played_at should be NULL, got %q", *last)
 	}
 }
