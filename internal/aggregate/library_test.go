@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/andrii/ephyra/internal/source"
+	"github.com/andriykohut/ephyra/internal/source"
 )
 
 func mkItem(name, typ string, size, runtimeSec int64, date string, year int, genres []string, lib, container, codec, transfer string, width int, hasVideo bool, dv *int) source.LibraryItem {

@@ -1,6 +1,6 @@
 package api
 
-import "github.com/andrii/ephyra/internal/aggregate"
+import "github.com/andriykohut/ephyra/internal/aggregate"
 
 func sampleAgg() aggregate.LibraryAggregates {
 	return aggregate.LibraryAggregates{

@@ -8,10 +8,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/andrii/ephyra/internal/aggregate"
-	"github.com/andrii/ephyra/internal/config"
-	"github.com/andrii/ephyra/internal/source"
-	"github.com/andrii/ephyra/internal/store"
+	"github.com/andriykohut/ephyra/internal/aggregate"
+	"github.com/andriykohut/ephyra/internal/config"
+	"github.com/andriykohut/ephyra/internal/source"
+	"github.com/andriykohut/ephyra/internal/store"
 )
 
 type Scheduler struct {

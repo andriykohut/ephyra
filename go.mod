@@ -1,4 +1,4 @@
-module github.com/andrii/ephyra
+module github.com/andriykohut/ephyra
 
 go 1.25.0
 

@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/andrii/ephyra/internal/aggregate"
+	"github.com/andriykohut/ephyra/internal/aggregate"
 )
 
 func sampleAggregates() aggregate.LibraryAggregates {

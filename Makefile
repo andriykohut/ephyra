@@ -1,6 +1,6 @@
 GO ?= go
 VERSION ?= dev
-LDFLAGS := -s -w -X github.com/andrii/ephyra/internal/buildinfo.version=$(VERSION)
+LDFLAGS := -s -w -X github.com/andriykohut/ephyra/internal/buildinfo.version=$(VERSION)
 
 .PHONY: test lint web build run dev docker
 

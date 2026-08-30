@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/andrii/ephyra/internal/source"
+	"github.com/andriykohut/ephyra/internal/source"
 )
 
 func init() { queryLibrary = defaultQueryLibrary }

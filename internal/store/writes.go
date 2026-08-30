@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 
-	"github.com/andrii/ephyra/internal/aggregate"
+	"github.com/andriykohut/ephyra/internal/aggregate"
 )
 
 // WriteLibraryAggregates replaces every library-derived row in one transaction,

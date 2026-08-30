@@ -33,7 +33,7 @@ stubs for now.
 # docker-compose.yml
 services:
   ephyra:
-    image: ghcr.io/OWNER/ephyra:latest
+    image: ghcr.io/andriykohut/ephyra:latest
     environment:
       JELLYFIN_URL: http://jellyfin:8096
       JELLYFIN_API_KEY: ${EPHYRA_JELLYFIN_API_KEY}
