@@ -17,7 +17,7 @@ COPY . .
 COPY --from=web /app/web/dist ./web/dist
 ARG VERSION=dev
 RUN CGO_ENABLED=0 go build -trimpath \
-    -ldflags "-s -w -X github.com/andrii/ephyra/internal/buildinfo.version=${VERSION}" \
+    -ldflags "-s -w -X github.com/andriykohut/ephyra/internal/buildinfo.version=${VERSION}" \
     -o /ephyra ./cmd/ephyra
 # /data is where STORE_PATH and WORK_DIR live; make it writable by the nonroot
 # user so a fresh volume inherits that ownership.

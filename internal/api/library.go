@@ -3,7 +3,7 @@ package api
 import (
 	"net/http"
 
-	"github.com/andrii/ephyra/internal/store"
+	"github.com/andriykohut/ephyra/internal/store"
 )
 
 func (s *Server) handleLibraryOverview(w http.ResponseWriter, r *http.Request) {

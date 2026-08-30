@@ -13,8 +13,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/andrii/ephyra/internal/config"
-	"github.com/andrii/ephyra/internal/source"
+	"github.com/andriykohut/ephyra/internal/config"
+	"github.com/andriykohut/ephyra/internal/source"
 	_ "modernc.org/sqlite"
 )
 

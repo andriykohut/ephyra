@@ -15,7 +15,7 @@
 Copied verbatim from the spec. Every task inherits these.
 
 - **No CGO.** `CGO_ENABLED=0` for every build. SQLite access is `modernc.org/sqlite` only.
-- **Go module path:** `github.com/andrii/ephyra`. This is a local identifier for an application (never published as a library). If your GitHub username is not `andrii`, choose the final value in Task 1 Step 1 and use it consistently in `go.mod` and every import.
+- **Go module path:** `github.com/andriykohut/ephyra`. This is a local identifier for an application (never published as a library). If your GitHub username is not `andrii`, choose the final value in Task 1 Step 1 and use it consistently in `go.mod` and every import.
 - **One artifact.** The frontend builds into the binary via `//go:embed`. One container, one config block, no runtime dependencies.
 - **Reads only.** Ephyra never writes to Jellyfin or to the mounted Jellyfin data directory. All Jellyfin DB access is against copies in `WORK_DIR`, opened read-only.
 - **Copy-before-read is the default.** `DIRECT_READ=true` is an opt-in escape hatch for read-write mounts.
@@ -169,12 +169,12 @@ web/src/test/setup.ts
     ```
   - `config.Load` returns a non-nil error listing every missing required var (joined), and parses durations with `time.ParseDuration`, `LogLevel` from `debug|info|warn|error`.
 
-- [ ] **Step 1: Decide the module path.** Default `github.com/andrii/ephyra`. If your GitHub username differs, pick the final string now; use it in `go.mod` and every import in this plan.
+- [ ] **Step 1: Decide the module path.** Default `github.com/andriykohut/ephyra`. If your GitHub username differs, pick the final string now; use it in `go.mod` and every import in this plan.
 
 - [ ] **Step 2: Create `go.mod`**
 
 ```
-module github.com/andrii/ephyra
+module github.com/andriykohut/ephyra
 
 go 1.25
 ```
@@ -187,7 +187,7 @@ Then: `go get modernc.org/sqlite@latest` (adds the driver; it is used from Task 
 package buildinfo
 
 // version is overridden at build time with:
-//   -ldflags "-X github.com/andrii/ephyra/internal/buildinfo.version=<v>"
+//   -ldflags "-X github.com/andriykohut/ephyra/internal/buildinfo.version=<v>"
 var version = "dev"
 
 // Version returns the build version string.
@@ -414,7 +414,7 @@ Expected: PASS (all four tests).
 ```make
 GO ?= go
 VERSION ?= dev
-LDFLAGS := -s -w -X github.com/andrii/ephyra/internal/buildinfo.version=$(VERSION)
+LDFLAGS := -s -w -X github.com/andriykohut/ephyra/internal/buildinfo.version=$(VERSION)
 
 .PHONY: test lint web build run dev docker fixtures
 
@@ -1213,7 +1213,7 @@ import (
 
 	"log/slog"
 
-	"github.com/andrii/ephyra/internal/config"
+	"github.com/andriykohut/ephyra/internal/config"
 )
 
 func newFS(t *testing.T, dataDir string) *FileSource {
@@ -1316,8 +1316,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/andrii/ephyra/internal/config"
-	"github.com/andrii/ephyra/internal/source"
+	"github.com/andriykohut/ephyra/internal/config"
+	"github.com/andriykohut/ephyra/internal/source"
 	_ "modernc.org/sqlite"
 )
 
@@ -1488,8 +1488,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/andrii/ephyra/internal/source"
-	"github.com/andrii/ephyra/internal/testsupport"
+	"github.com/andriykohut/ephyra/internal/source"
+	"github.com/andriykohut/ephyra/internal/testsupport"
 )
 
 func openFixture(t *testing.T) *sql.DB {
@@ -1559,7 +1559,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/andrii/ephyra/internal/source"
+	"github.com/andriykohut/ephyra/internal/source"
 )
 
 func init() { queryLibrary = defaultQueryLibrary }
@@ -1904,7 +1904,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/andrii/ephyra/internal/source"
+	"github.com/andriykohut/ephyra/internal/source"
 )
 
 func mkItem(name, typ string, size, runtimeSec int64, date string, year int, genres []string, lib, container, codec, transfer string, width int, hasVideo bool, dv *int) source.LibraryItem {
@@ -2018,7 +2018,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/andrii/ephyra/internal/source"
+	"github.com/andriykohut/ephyra/internal/source"
 )
 
 type LabeledCount struct {
@@ -2273,7 +2273,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/andrii/ephyra/internal/aggregate"
+	"github.com/andriykohut/ephyra/internal/aggregate"
 )
 
 func sampleAggregates() aggregate.LibraryAggregates {
@@ -2356,7 +2356,7 @@ import (
 	"context"
 	"database/sql"
 
-	"github.com/andrii/ephyra/internal/aggregate"
+	"github.com/andriykohut/ephyra/internal/aggregate"
 )
 
 func (s *Store) WriteLibraryAggregates(ctx context.Context, a aggregate.LibraryAggregates) error {
@@ -2446,7 +2446,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/andrii/ephyra/internal/aggregate"
+	"github.com/andriykohut/ephyra/internal/aggregate"
 )
 
 type LibraryOverview struct {
@@ -2681,9 +2681,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/andrii/ephyra/internal/config"
-	"github.com/andrii/ephyra/internal/source"
-	"github.com/andrii/ephyra/internal/store"
+	"github.com/andriykohut/ephyra/internal/config"
+	"github.com/andriykohut/ephyra/internal/source"
+	"github.com/andriykohut/ephyra/internal/store"
 )
 
 type fakeSource struct {
@@ -2834,10 +2834,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/andrii/ephyra/internal/aggregate"
-	"github.com/andrii/ephyra/internal/config"
-	"github.com/andrii/ephyra/internal/source"
-	"github.com/andrii/ephyra/internal/store"
+	"github.com/andriykohut/ephyra/internal/aggregate"
+	"github.com/andriykohut/ephyra/internal/config"
+	"github.com/andriykohut/ephyra/internal/source"
+	"github.com/andriykohut/ephyra/internal/store"
 )
 
 type Scheduler struct {
@@ -3000,8 +3000,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/andrii/ephyra/internal/config"
-	"github.com/andrii/ephyra/internal/store"
+	"github.com/andriykohut/ephyra/internal/config"
+	"github.com/andriykohut/ephyra/internal/store"
 )
 
 type fakeTrigger struct{ got []string }
@@ -3116,7 +3116,7 @@ Add a small helper file `internal/api/testhelpers_test.go`:
 ```go
 package api
 
-import "github.com/andrii/ephyra/internal/aggregate"
+import "github.com/andriykohut/ephyra/internal/aggregate"
 
 func sampleAgg() aggregate.LibraryAggregates {
 	return aggregate.LibraryAggregates{
@@ -3142,8 +3142,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/andrii/ephyra/internal/config"
-	"github.com/andrii/ephyra/internal/store"
+	"github.com/andriykohut/ephyra/internal/config"
+	"github.com/andriykohut/ephyra/internal/store"
 )
 
 type Triggerer interface{ Trigger(job string) }
@@ -3270,7 +3270,7 @@ package api
 import (
 	"net/http"
 
-	"github.com/andrii/ephyra/internal/store"
+	"github.com/andriykohut/ephyra/internal/store"
 )
 
 func (s *Server) handleLibraryOverview(w http.ResponseWriter, r *http.Request) {
@@ -3493,14 +3493,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/andrii/ephyra/internal/api"
-	"github.com/andrii/ephyra/internal/buildinfo"
-	"github.com/andrii/ephyra/internal/config"
-	"github.com/andrii/ephyra/internal/scheduler"
-	"github.com/andrii/ephyra/internal/source"
-	"github.com/andrii/ephyra/internal/source/file"
-	"github.com/andrii/ephyra/internal/store"
-	"github.com/andrii/ephyra/web"
+	"github.com/andriykohut/ephyra/internal/api"
+	"github.com/andriykohut/ephyra/internal/buildinfo"
+	"github.com/andriykohut/ephyra/internal/config"
+	"github.com/andriykohut/ephyra/internal/scheduler"
+	"github.com/andriykohut/ephyra/internal/source"
+	"github.com/andriykohut/ephyra/internal/source/file"
+	"github.com/andriykohut/ephyra/internal/store"
+	"github.com/andriykohut/ephyra/web"
 )
 
 func main() {
@@ -4433,7 +4433,7 @@ COPY . .
 COPY --from=web /app/web/dist ./web/dist
 ARG VERSION=dev
 RUN CGO_ENABLED=0 go build -trimpath \
-    -ldflags "-s -w -X github.com/andrii/ephyra/internal/buildinfo.version=${VERSION}" \
+    -ldflags "-s -w -X github.com/andriykohut/ephyra/internal/buildinfo.version=${VERSION}" \
     -o /ephyra ./cmd/ephyra
 
 FROM gcr.io/distroless/static-debian12:nonroot

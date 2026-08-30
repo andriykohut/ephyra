@@ -1,8 +1,8 @@
-# Copy to docker-compose.yml, fill in OWNER, the Jellyfin config path, and the
+# Copy to docker-compose.yml, fill in the Jellyfin config path, and the
 # API key, then `docker compose up -d`. Browse to http://<host>:8080.
 services:
   ephyra:
-    image: ghcr.io/OWNER/ephyra:latest
+    image: ghcr.io/andriykohut/ephyra:latest
     environment:
       JELLYFIN_URL: http://jellyfin:8096
       JELLYFIN_API_KEY: ${EPHYRA_JELLYFIN_API_KEY}

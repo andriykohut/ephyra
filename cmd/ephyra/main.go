@@ -12,14 +12,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/andrii/ephyra/internal/api"
-	"github.com/andrii/ephyra/internal/buildinfo"
-	"github.com/andrii/ephyra/internal/config"
-	"github.com/andrii/ephyra/internal/scheduler"
-	"github.com/andrii/ephyra/internal/source"
-	"github.com/andrii/ephyra/internal/source/file"
-	"github.com/andrii/ephyra/internal/store"
-	"github.com/andrii/ephyra/web"
+	"github.com/andriykohut/ephyra/internal/api"
+	"github.com/andriykohut/ephyra/internal/buildinfo"
+	"github.com/andriykohut/ephyra/internal/config"
+	"github.com/andriykohut/ephyra/internal/scheduler"
+	"github.com/andriykohut/ephyra/internal/source"
+	"github.com/andriykohut/ephyra/internal/source/file"
+	"github.com/andriykohut/ephyra/internal/store"
+	"github.com/andriykohut/ephyra/web"
 )
 
 func main() {

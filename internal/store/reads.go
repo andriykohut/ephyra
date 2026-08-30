@@ -5,7 +5,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/andrii/ephyra/internal/aggregate"
+	"github.com/andriykohut/ephyra/internal/aggregate"
 )
 
 // LibraryOverview is the shape GET /api/library/overview returns (under "data").

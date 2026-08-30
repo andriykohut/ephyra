@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/andrii/ephyra/internal/config"
+	"github.com/andriykohut/ephyra/internal/config"
 )
 
 func newFS(t *testing.T, dataDir string) *FileSource {

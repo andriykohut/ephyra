@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/andrii/ephyra/internal/source"
-	"github.com/andrii/ephyra/internal/testsupport"
+	"github.com/andriykohut/ephyra/internal/source"
+	"github.com/andriykohut/ephyra/internal/testsupport"
 )
 
 func openFixture(t *testing.T) *sql.DB {

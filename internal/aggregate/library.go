@@ -6,7 +6,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/andrii/ephyra/internal/source"
+	"github.com/andriykohut/ephyra/internal/source"
 )
 
 type LabeledCount struct {

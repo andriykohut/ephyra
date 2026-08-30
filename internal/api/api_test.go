@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/andrii/ephyra/internal/config"
-	"github.com/andrii/ephyra/internal/store"
+	"github.com/andriykohut/ephyra/internal/config"
+	"github.com/andriykohut/ephyra/internal/store"
 )
 
 type fakeTrigger struct{ got []string }
