@@ -6,6 +6,7 @@ package file
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -101,8 +102,34 @@ func (f *FileSource) LibraryFacts(ctx context.Context) (source.LibrarySnapshot, 
 	return s, nil
 }
 
-func (f *FileSource) PlaybackEvents(context.Context, time.Time) ([]source.PlaybackEvent, error) {
-	return nil, source.ErrNotImplemented
+func (f *FileSource) PlaybackEvents(ctx context.Context, _ time.Time) ([]source.PlaybackEvent, error) {
+	pdb, pcleanup, err := f.openForRead(ctx, "watch")
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, source.ErrPluginUnavailable
+		}
+		return nil, err
+	}
+	defer pcleanup()
+
+	if !tableExists(pdb, "PlaybackActivity") {
+		return nil, source.ErrPluginUnavailable
+	}
+	events, err := queryPlaybackEvents(pdb)
+	if err != nil {
+		return nil, err
+	}
+
+	jdb, jcleanup, err := f.openForRead(ctx, "library")
+	if err != nil {
+		f.log.Warn("watch enrichment skipped: jellyfin.db unavailable", "err", err)
+		return events, nil
+	}
+	defer jcleanup()
+	if err := enrichPlaybackEvents(jdb, events); err != nil {
+		f.log.Warn("watch enrichment failed", "err", err)
+	}
+	return events, nil
 }
 
 // openForRead returns a read-only *sql.DB over a private copy of the job's
