@@ -9,3 +9,18 @@ linters:
     - ineffassign
     - unused
     - misspell
+  settings:
+    errcheck:
+      # deferred/cleanup Close and Rollback in error paths: not worth handling.
+      exclude-functions:
+        - (*database/sql.DB).Close
+        - (*database/sql.Rows).Close
+        - (*database/sql.Tx).Rollback
+        - (*database/sql.Stmt).Close
+        - (*os.File).Close
+        - os.Remove
+  exclusions:
+    rules:
+      # tests lean on defer x.Close() heavily; not worth the noise there.
+      - path: _test\.go
+        linters: [errcheck]
