@@ -102,6 +102,18 @@ func TestLibraryOverview_OKAndStaleFlag(t *testing.T) {
 	}
 }
 
+func TestUnknownAPIPathIs404JSON(t *testing.T) {
+	s, _, _ := newTestServer(t, time.Now())
+	rr := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/nope", nil))
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("want 404, got %d", rr.Code)
+	}
+	if ct := rr.Header().Get("Content-Type"); ct != "application/json" {
+		t.Fatalf("want json, got %q", ct)
+	}
+}
+
 func TestRefreshEndpoint(t *testing.T) {
 	s, _, ft := newTestServer(t, time.Now())
 	rr := httptest.NewRecorder()

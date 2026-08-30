@@ -1,0 +1,76 @@
+@import "tailwindcss";
+
+@theme {
+  --color-abyss: #06080f;
+  --color-deep: #0a0e1b;
+  --color-panel: #121d39;
+  --color-line: #232c46;
+  --color-ink: #e8eef7;
+  --color-muted: #8a9bb8;
+  --color-cyan: #4fe0d8;
+  --color-violet: #9b7bff;
+  --color-mote: #ffc24b;
+
+  --font-display: "Bricolage Grotesque Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", monospace;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    background: var(--color-abyss);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+/* one moving light layer, sits behind everything */
+.ambient::before {
+  content: "";
+  position: fixed;
+  inset: -15% -10% 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(44% 34% at 28% 22%, color-mix(in oklab, var(--color-cyan) 10%, transparent), transparent 70%),
+    radial-gradient(42% 32% at 76% 64%, color-mix(in oklab, var(--color-violet) 12%, transparent), transparent 70%);
+  animation: ephyra-drift 26s ease-in-out infinite alternate;
+}
+
+@keyframes ephyra-drift {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(0, -34px, 0);
+  }
+}
+
+@keyframes ephyra-wipe {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+.seg-wipe {
+  transform-origin: left;
+  animation: ephyra-wipe 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ambient::before {
+    animation: none;
+  }
+  .seg-wipe {
+    animation: none;
+  }
+}
