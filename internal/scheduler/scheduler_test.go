@@ -145,3 +145,39 @@ func TestRun_StartupRunsLibraryOnce(t *testing.T) {
 	cancel()
 	<-done
 }
+
+func TestRunLibraryOnce_PopulatesCleanupUsersCore(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir()+"/s.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	e := source.LibraryItem{ID: "e1", Name: "S1E1", Type: "episode", SizeBytes: 10, Library: "Shows",
+		SeriesID: "s1", SeriesName: "Some Show"}
+	m := source.LibraryItem{ID: "m1", Name: "Alpha", Type: "movie", SizeBytes: 20, Library: "Movies"}
+	fs := &fakeSource{snap: source.LibrarySnapshot{
+		Items:     []source.LibraryItem{m, e},
+		Users:     []source.UserRef{{ID: "u1", Name: "alice"}, {ID: "u2", Name: "bob"}, {ID: "u3", Name: "z"}},
+		UserPlays: []source.UserPlay{{UserID: "u1", Scope: "movie", ItemID: "m1", Name: "Alpha", PlayCount: 3}},
+	}}
+	ts := time.Unix(1000, 0)
+	fs.mtime.Store(&ts)
+	sc := New(st, fs, config.Config{RefreshLibrary: time.Hour}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	if err := sc.RunLibraryOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var cleanup, users, core int
+	st.DB().QueryRowContext(ctx, `SELECT count(*) FROM agg_cleanup`).Scan(&cleanup)
+	st.DB().QueryRowContext(ctx, `SELECT count(*) FROM dim_user`).Scan(&users)
+	st.DB().QueryRowContext(ctx, `SELECT count(*) FROM agg_played_core`).Scan(&core)
+	if cleanup != 2 || users != 3 || core != 1 {
+		t.Fatalf("cleanup=%d users=%d core=%d (want 2/3/1)", cleanup, users, core)
+	}
+	var scope string
+	if err := st.DB().QueryRowContext(ctx, `SELECT scope FROM agg_cleanup WHERE scope='series' LIMIT 1`).Scan(&scope); err != nil {
+		t.Fatalf("no series row in agg_cleanup: %v", err)
+	}
+}

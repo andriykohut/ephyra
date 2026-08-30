@@ -87,11 +87,14 @@ func (s *Scheduler) RunLibraryOnce(ctx context.Context) error {
 
 	snap, err := s.src.LibraryFacts(ctx)
 	if err != nil {
-		return s.recordFailure(ctx, mt, start, err)
+		return s.recordFailure(ctx, "library", mt, start, err)
 	}
 	agg := aggregate.Library(snap, time.Local)
-	if err := s.st.WriteLibraryAggregates(ctx, agg, nil, nil, nil); err != nil {
-		return s.recordFailure(ctx, mt, start, err)
+	cleanup := aggregate.Cleanup(snap)
+	users := aggregate.Users(snap)
+	core := aggregate.CorePlays(snap.UserPlays)
+	if err := s.st.WriteLibraryAggregates(ctx, agg, cleanup, users, core); err != nil {
+		return s.recordFailure(ctx, "library", mt, start, err)
 	}
 	s.log.Info("library refresh ok",
 		"items", int64(agg.Totals["items.total"]), "dur_ms", time.Since(start).Milliseconds())
@@ -101,9 +104,9 @@ func (s *Scheduler) RunLibraryOnce(ctx context.Context) error {
 	})
 }
 
-func (s *Scheduler) recordFailure(ctx context.Context, mt, start time.Time, cause error) error {
+func (s *Scheduler) recordFailure(ctx context.Context, job string, mt, start time.Time, cause error) error {
 	_ = s.st.SetRefreshMeta(ctx, store.RefreshMeta{
-		Job: "library", LastRunAt: time.Now().UTC(), SourceMTime: mt,
+		Job: job, LastRunAt: time.Now().UTC(), SourceMTime: mt,
 		DurationMS: time.Since(start).Milliseconds(), OK: false, Error: cause.Error(),
 	})
 	return cause
