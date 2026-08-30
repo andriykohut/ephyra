@@ -101,10 +101,12 @@ API handlers read ONLY from store's agg_* tables, never from Jellyfin.
 
 The queries in `internal/source/file/queries.go` assume a particular `library.db`
 layout, documented in `docs/schema-notes.md`. That layout has **not** been
-verified against a real Jellyfin yet — run `scripts/dump-jellyfin-schema.sh` on a
-Jellyfin host and reconcile before trusting the numbers. `testdata/library.fixture.sql`
-is a hand-built stand-in shaped like the assumed schema;
-`internal/testsupport.LibraryFixtureDB(t)` builds it into a temp DB per test.
+verified against a real Jellyfin yet — README's "Test against a real library"
+walks through copying a real `library.db`, checking the schema, and running the
+binary against it to eyeball the aggregates. Do that before trusting the numbers.
+`testdata/library.fixture.sql` is a hand-built stand-in shaped like the assumed
+schema; `internal/testsupport.LibraryFixtureDB(t)` builds it into a temp DB per
+test.
 
 ## Conventions
 
