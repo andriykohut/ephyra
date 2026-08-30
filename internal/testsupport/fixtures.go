@@ -17,6 +17,43 @@ func LibraryFixtureDB(t testing.TB) string {
 	return buildFixture(t, "library.fixture.sql")
 }
 
+// PlaybackFixtureDB builds a fresh playback_reporting.db from
+// testdata/playback_reporting.fixture.sql and returns its path.
+func PlaybackFixtureDB(t testing.TB) string {
+	t.Helper()
+	return buildFixture(t, "playback_reporting.fixture.sql")
+}
+
+// TwoDBLayout writes both fixtures into <tmp>/data/ as jellyfin.db and
+// playback_reporting.db and returns <tmp> — a value for JELLYFIN_DATA_DIR.
+func TwoDBLayout(t testing.TB) string {
+	t.Helper()
+	root := t.TempDir()
+	dataDir := filepath.Join(root, "data")
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []struct{ sqlName, dbName string }{
+		{"library.fixture.sql", "jellyfin.db"},
+		{"playback_reporting.fixture.sql", "playback_reporting.db"},
+	} {
+		src, err := os.ReadFile(fixturePath(t, f.sqlName))
+		if err != nil {
+			t.Fatal(err)
+		}
+		db, err := sql.Open("sqlite", filepath.Join(dataDir, f.dbName))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(string(src)); err != nil {
+			db.Close()
+			t.Fatal(err)
+		}
+		db.Close()
+	}
+	return root
+}
+
 func buildFixture(t testing.TB, name string) string {
 	t.Helper()
 	sqlBytes, err := os.ReadFile(fixturePath(t, name))

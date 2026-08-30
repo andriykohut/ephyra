@@ -4,20 +4,20 @@
 
 # ephyra
 
-A stats dashboard for Jellyfin. It reads copies of Jellyfin's SQLite files on a
-schedule, rolls them up into its own small database, and serves the result as a
-single Go binary with the frontend baked in. Standing load on Jellyfin is
-basically nil.
+A fast, self-hosted stats dashboard for Jellyfin: library breakdowns, watch
+history, and cleanup candidates, in one Go binary with the frontend baked in.
+Runs beside Jellyfin in Docker Compose and puts next to no load on the server.
 
 Named after the juvenile stage of a jellyfin— sorry, jellyfish.
 
-> **Pre-alpha.** Very much so. One page works, three are stubs, only one real
+> **Pre-alpha.** Very much so. Three pages work, one is a stub, only one real
 > Jellyfin (10.11.11) has been tested against, nothing is tagged, and anything
 > here can change without notice. Run it if you're curious, not if you're
 > relying on it.
 
-**This build ships the Library page.** Watch Stats, Now Playing, and Cleanup are
-stubs for now.
+**This build ships Library, Watch Stats, and Cleanup.** Now Playing is a stub.
+Watch Stats needs the Playback Reporting plugin and shows an "enable this plugin"
+panel without it; the other pages work against core Jellyfin alone.
 
 ## What you need
 
@@ -75,7 +75,7 @@ for login.
 | `DIRECT_READ` | no | `false` | skip the copy, read the live DB with `immutable=1`. Only if your mount is read-write |
 | `STREAM_CAPACITY` | no | unset | unused in this build |
 | `LOG_LEVEL` | no | `info` | `debug` \| `info` \| `warn` \| `error`; JSON to stdout |
-| `TZ` | no | `UTC` | affects month bucketing on the growth chart |
+| `TZ` | no | `UTC` | e.g. `Europe/Kyiv`; affects month bucketing on the growth chart |
 
 ## How it reads data
 
@@ -109,14 +109,21 @@ mkdir -p ~/ephyra-test/jf/data
 
 # Jellyfin in a container (run wherever that container is):
 cid=$(docker ps --filter name=jellyfin --format '{{.ID}}' | head -1)
-db=$(docker exec "$cid" sh -c 'ls /config/data/jellyfin.db /config/data/data/jellyfin.db 2>/dev/null | head -1')
-for f in "$db" "$db-wal" "$db-shm"; do
-  docker cp "$cid:$f" ~/ephyra-test/jf/data/ 2>/dev/null || true
+dir=$(docker exec "$cid" sh -c 'ls -d /config/data/data /config/data 2>/dev/null | head -1')
+for name in jellyfin.db playback_reporting.db; do
+  for f in "$dir/$name" "$dir/$name-wal" "$dir/$name-shm"; do
+    docker cp "$cid:$f" ~/ephyra-test/jf/data/ 2>/dev/null || true
+  done
 done
 
-# Jellyfin not containerised: cp jellyfin.db* from <jellyfin-config>/data/
+# Jellyfin not containerised: cp jellyfin.db* (and playback_reporting.db* if the
+# Playback Reporting plugin is installed) from <jellyfin-config>/data/.
 # Jellyfin on another machine: do the copy there, then scp/rsync the dir over.
 ```
+
+`playback_reporting.db` is optional — it's what the Watch Stats page reads. Skip
+it and that page shows an "enable this plugin" panel; everything else is
+unaffected.
 
 ### Check the schema
 

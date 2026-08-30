@@ -8,8 +8,10 @@ import (
 )
 
 // WriteLibraryAggregates replaces every library-derived row in one transaction,
-// so a reader never sees a half-written set.
-func (s *Store) WriteLibraryAggregates(ctx context.Context, a aggregate.LibraryAggregates) error {
+// so a reader never sees a half-written set. The library job also owns the
+// cleanup candidates, the user directory, and core play counts.
+func (s *Store) WriteLibraryAggregates(ctx context.Context, a aggregate.LibraryAggregates,
+	cleanup []aggregate.CleanupRow, users []aggregate.UserRow, core []aggregate.CorePlayRow) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -21,6 +23,9 @@ func (s *Store) WriteLibraryAggregates(ctx context.Context, a aggregate.LibraryA
 		`DELETE FROM agg_disk`,
 		`DELETE FROM agg_distribution WHERE dimension IN ('genre','decade','library_items')`,
 		`DELETE FROM agg_library_growth`,
+		`DELETE FROM agg_cleanup`,
+		`DELETE FROM dim_user`,
+		`DELETE FROM agg_played_core`,
 	} {
 		if _, err := tx.ExecContext(ctx, q); err != nil {
 			return err
@@ -76,7 +81,40 @@ func (s *Store) WriteLibraryAggregates(ctx context.Context, a aggregate.LibraryA
 		}
 	}
 
+	for _, c := range cleanup {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO agg_cleanup (item_id, scope, name, library, bytes, episodes, added_at, last_played_at)
+			VALUES (?,?,?,?,?,?,?,?)`,
+			c.ItemID, c.Scope, c.Name, c.Library, c.Bytes, c.Episodes, c.AddedAt, nullif(c.LastPlayedAt),
+		); err != nil {
+			return err
+		}
+	}
+	for _, u := range users {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO dim_user (id, name) VALUES (?,?)`, u.ID, u.Name); err != nil {
+			return err
+		}
+	}
+	for _, p := range core {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO agg_played_core (user_id, scope, item_id, name, play_count, last_played_at)
+			VALUES (?,?,?,?,?,?)`,
+			p.UserID, p.Scope, p.ItemID, p.Name, p.PlayCount, nullif(p.LastPlayedAt),
+		); err != nil {
+			return err
+		}
+	}
+
 	return tx.Commit()
+}
+
+// nullif turns "" into a SQL NULL so `IS NULL` filters work as intended.
+func nullif(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
 }
 
 func insertTotals(ctx context.Context, tx *sql.Tx, totals map[string]float64) error {

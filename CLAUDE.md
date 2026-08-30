@@ -6,10 +6,9 @@ Ephyra is a stats dashboard for Jellyfin: one Go binary with a React SPA baked i
 It reads *copies* of Jellyfin's SQLite files on a schedule and serves rolled-up
 aggregates. It never writes to Jellyfin or to the mounted directory.
 
-This is **Plan 1 of 3** (Library Overview). The design spec and implementation
-plans live in `docs/superpowers/`. `watch_events_daily`, `agg_watch_heatmap`, and
-`agg_cleanup` exist in the schema but are unused until Plan 2 (Watch Stats &
-Cleanup); Plan 3 is Now Playing (SSE).
+**Plans 1 and 2 of 3 are done** (Library Overview; Watch Stats & Cleanup). The
+design specs and implementation plans live in `docs/superpowers/`. Plan 3 is Now
+Playing (SSE) — `internal/live` and the `/now` route are still stubs.
 
 ## Commands
 
@@ -100,14 +99,30 @@ API handlers read ONLY from store's agg_* tables, never from Jellyfin.
 ## Jellyfin schema
 
 `internal/source/file/queries.go` targets Jellyfin **10.11**'s `jellyfin.db`
-(EF-Core: `BaseItems` / `MediaStreamInfos`), verified against a real DB on
-2026-08-30. `docs/schema-notes.md` records the layout and the gotchas (integer
-`StreamType` enum, `TopParentId` points at the physical folder not the
-`CollectionFolder`, no `Container` column — derived from `Path`). Older
+(EF-Core: `BaseItems` / `MediaStreamInfos` / `Users` / `UserData`), verified
+against a real DB on 2026-08-30. `docs/schema-notes.md` records the layout and the
+gotchas (integer `StreamType` enum, `TopParentId` points at the physical folder
+not the `CollectionFolder`, no `Container` column — derived from `Path`). Older
 `library.db` installs (10.10 and earlier) are not handled. Re-run README's "Test
 against a real library" after any Jellyfin upgrade. `testdata/library.fixture.sql`
-is a hand-built stand-in in that schema; `internal/testsupport.LibraryFixtureDB(t)`
-loads it into a temp DB per test.
++ `testdata/playback_reporting.fixture.sql` are hand-built stand-ins;
+`internal/testsupport` loads them (`LibraryFixtureDB`, `PlaybackFixtureDB`,
+`TwoDBLayout`).
+
+**Watch job reads two DBs.** `Source.PlaybackEvents` opens the Playback Reporting
+plugin's `playback_reporting.db` for the events and does a targeted read of the
+`jellyfin.db` copy for user names + current title/series. Plugin absent →
+`source.ErrPluginUnavailable`, job records `plugin_available=false`, writes no
+`agg_watch_*` rows (not a failure).
+
+**Canonical IDs.** Every user/item/series id in Ephyra's store is dashless
+lowercase (`source.CanonID`). The plugin DB is already that shape; `jellyfin.db`
+is dashed-uppercase and is normalized on read.
+
+**Watch timestamps are not re-zoned.** `playback_reporting.db` writes server-local
+wall time; `aggregate.Watch` buckets `day`/`dow`/`hour` off the literal
+components and ignores `TZ` (unlike `aggregate.Library`, whose `jellyfin.db`
+`DateCreated` is UTC).
 
 ## Conventions
 

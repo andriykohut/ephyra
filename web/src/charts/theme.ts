@@ -38,3 +38,14 @@ export function abyssalTheme() {
     },
   };
 }
+
+export const methodColors: Record<string, string> = {
+  DirectPlay: "#4fe0d8",
+  Remux: "#57c7a3",
+  AudioTranscode: "#7ba7e6",
+  VideoTranscode: "#9b7bff",
+  Other: "#8a9bb8",
+};
+
+// heatmap ramp: near-transparent cyan -> cyan -> violet
+export const heatRamp = ["rgba(79,224,216,0.05)", "rgba(79,224,216,0.55)", "rgba(155,123,255,0.9)"];

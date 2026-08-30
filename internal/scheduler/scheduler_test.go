@@ -19,12 +19,18 @@ type fakeSource struct {
 	calls    atomic.Int32
 	failNext atomic.Bool
 	snap     source.LibrarySnapshot
+
+	events       []source.PlaybackEvent
+	pluginAbsent bool
 }
 
 func (f *fakeSource) Kind() string { return "fake" }
 
 func (f *fakeSource) PlaybackEvents(context.Context, time.Time) ([]source.PlaybackEvent, error) {
-	return nil, source.ErrNotImplemented
+	if f.pluginAbsent {
+		return nil, source.ErrPluginUnavailable
+	}
+	return f.events, nil
 }
 
 func (f *fakeSource) LibraryFacts(context.Context) (source.LibrarySnapshot, error) {
@@ -54,7 +60,7 @@ func newSched(t *testing.T) (*Scheduler, *fakeSource, *store.Store) {
 	}}}
 	ts := time.Unix(1000, 0)
 	fs.mtime.Store(&ts)
-	sc := New(st, fs, config.Config{RefreshLibrary: time.Hour}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	sc := New(st, fs, config.Config{RefreshLibrary: time.Hour, RefreshWatch: time.Hour}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	return sc, fs, st
 }
 
@@ -144,4 +150,96 @@ func TestRun_StartupRunsLibraryOnce(t *testing.T) {
 	}
 	cancel()
 	<-done
+}
+
+func TestRunLibraryOnce_PopulatesCleanupUsersCore(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir()+"/s.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	e := source.LibraryItem{ID: "e1", Name: "S1E1", Type: "episode", SizeBytes: 10, Library: "Shows",
+		SeriesID: "s1", SeriesName: "Some Show"}
+	m := source.LibraryItem{ID: "m1", Name: "Alpha", Type: "movie", SizeBytes: 20, Library: "Movies"}
+	fs := &fakeSource{snap: source.LibrarySnapshot{
+		Items:     []source.LibraryItem{m, e},
+		Users:     []source.UserRef{{ID: "u1", Name: "alice"}, {ID: "u2", Name: "bob"}, {ID: "u3", Name: "z"}},
+		UserPlays: []source.UserPlay{{UserID: "u1", Scope: "movie", ItemID: "m1", Name: "Alpha", PlayCount: 3}},
+	}}
+	ts := time.Unix(1000, 0)
+	fs.mtime.Store(&ts)
+	sc := New(st, fs, config.Config{RefreshLibrary: time.Hour, RefreshWatch: time.Hour}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	if err := sc.RunLibraryOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var cleanup, users, core int
+	st.DB().QueryRowContext(ctx, `SELECT count(*) FROM agg_cleanup`).Scan(&cleanup)
+	st.DB().QueryRowContext(ctx, `SELECT count(*) FROM dim_user`).Scan(&users)
+	st.DB().QueryRowContext(ctx, `SELECT count(*) FROM agg_played_core`).Scan(&core)
+	if cleanup != 2 || users != 3 || core != 1 {
+		t.Fatalf("cleanup=%d users=%d core=%d (want 2/3/1)", cleanup, users, core)
+	}
+	var scope string
+	if err := st.DB().QueryRowContext(ctx, `SELECT scope FROM agg_cleanup WHERE scope='series' LIMIT 1`).Scan(&scope); err != nil {
+		t.Fatalf("no series row in agg_cleanup: %v", err)
+	}
+}
+
+func TestRunWatchOnce_PopulatesWatchTables(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir()+"/s.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	fs := &fakeSource{events: []source.PlaybackEvent{
+		{At: time.Date(2025, 1, 6, 20, 0, 0, 0, time.UTC), UserID: "u1", ItemID: "m1", ItemType: "movie", Method: "DirectPlay", PlayDurationSec: 3600},
+		{At: time.Date(2025, 1, 7, 21, 0, 0, 0, time.UTC), UserID: "u2", ItemID: "e1", ItemType: "episode", SeriesID: "s1", SeriesName: "Show", Method: "Transcode (v:h264 a:aac)", PlayDurationSec: 1500},
+	}}
+	ts := time.Unix(1000, 0)
+	fs.mtime.Store(&ts)
+	sc := New(st, fs, config.Config{RefreshLibrary: time.Hour, RefreshWatch: time.Hour}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	if err := sc.RunWatchOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var daily, heat int
+	st.DB().QueryRowContext(ctx, `SELECT count(*) FROM watch_events_daily`).Scan(&daily)
+	st.DB().QueryRowContext(ctx, `SELECT count(*) FROM agg_watch_heatmap`).Scan(&heat)
+	if daily != 2 || heat != 2 {
+		t.Fatalf("daily=%d heat=%d", daily, heat)
+	}
+	m, ok, _ := st.GetRefreshMeta(ctx, "watch")
+	if !ok || !m.OK || !m.PluginAvailable {
+		t.Fatalf("watch meta: %+v ok=%v", m, ok)
+	}
+}
+
+func TestRunWatchOnce_PluginAbsent(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir()+"/s.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	fs := &fakeSource{pluginAbsent: true}
+	sc := New(st, fs, config.Config{RefreshLibrary: time.Hour, RefreshWatch: time.Hour}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	if err := sc.RunWatchOnce(ctx); err != nil {
+		t.Fatalf("plugin-absent should not error: %v", err)
+	}
+	m, ok, _ := st.GetRefreshMeta(ctx, "watch")
+	if !ok || !m.OK || m.PluginAvailable {
+		t.Fatalf("want ok=true plugin_available=false, got %+v", m)
+	}
+	var daily int
+	st.DB().QueryRowContext(ctx, `SELECT count(*) FROM watch_events_daily`).Scan(&daily)
+	if daily != 0 {
+		t.Fatalf("no rows expected, got %d", daily)
+	}
 }

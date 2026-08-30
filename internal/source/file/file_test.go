@@ -8,7 +8,11 @@ import (
 	"testing"
 	"time"
 
+	"errors"
+
 	"github.com/andriykohut/ephyra/internal/config"
+	"github.com/andriykohut/ephyra/internal/source"
+	"github.com/andriykohut/ephyra/internal/testsupport"
 )
 
 func newFS(t *testing.T, dataDir string) *FileSource {
@@ -79,5 +83,61 @@ func TestLibraryFactsCopiesSidecars(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(f.workDir, "library", "library.db")); !os.IsNotExist(err) {
 		t.Fatalf("copy not cleaned up: %v", err)
+	}
+}
+
+func TestPlaybackEvents_ReadsAndEnriches(t *testing.T) {
+	f := newFS(t, testsupport.TwoDBLayout(t))
+
+	events, err := f.PlaybackEvents(context.Background(), time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 8 {
+		t.Fatalf("want 8 events, got %d", len(events))
+	}
+
+	var sawColin bool
+	for _, e := range events {
+		if e.UserID == "66666666777788889999aaaaaaaaaaaa" {
+			if e.UserName != "bob" {
+				t.Errorf("bob not resolved: %q", e.UserName)
+			}
+			sawColin = true
+		}
+		if e.ItemType == "episode" && e.ItemID == "000000000000000000000000000000e1" {
+			if e.SeriesName != "Some Show" || e.SeriesID == "" {
+				t.Errorf("E1 series not resolved: %+v", e)
+			}
+		}
+		if e.ItemID == "deadbeefdeadbeefdeadbeefdeadbeef" {
+			if e.ItemName != "Ghost Movie (deleted)" || e.SeriesID != "" {
+				t.Errorf("deleted item fallback wrong: %+v", e)
+			}
+		}
+		if e.ItemName == "Some Show - s01e02 - Two" {
+			t.Errorf("E2 name should be replaced by BaseItems.Name, got %q", e.ItemName)
+		}
+		if e.ItemID == "000000000000000000000000000000e2" {
+			if e.At.Hour() != 23 || e.At.Day() != 8 {
+				t.Errorf("At not literal wall-clock: %v", e.At)
+			}
+			if e.ItemName != "S1E2" {
+				t.Errorf("E2 name = %q, want S1E2 (from BaseItems)", e.ItemName)
+			}
+		}
+	}
+	if !sawColin {
+		t.Error("no bob events")
+	}
+}
+
+func TestPlaybackEvents_PluginAbsent(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "data", "jellyfin.db"), "")
+	f := newFS(t, dir)
+	_, err := f.PlaybackEvents(context.Background(), time.Time{})
+	if !errors.Is(err, source.ErrPluginUnavailable) {
+		t.Fatalf("want ErrPluginUnavailable, got %v", err)
 	}
 }

@@ -1,5 +1,10 @@
-import { BarChart, LineChart } from "echarts/charts";
-import { GridComponent, LegendComponent, TooltipComponent } from "echarts/components";
+import { BarChart, HeatmapChart, LineChart } from "echarts/charts";
+import {
+  GridComponent,
+  LegendComponent,
+  TooltipComponent,
+  VisualMapComponent,
+} from "echarts/components";
 import * as echarts from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
 import { abyssalTheme } from "./theme";
@@ -7,9 +12,11 @@ import { abyssalTheme } from "./theme";
 echarts.use([
   BarChart,
   LineChart,
+  HeatmapChart,
   GridComponent,
   TooltipComponent,
   LegendComponent,
+  VisualMapComponent,
   CanvasRenderer,
 ]);
 

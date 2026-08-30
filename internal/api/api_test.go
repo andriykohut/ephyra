@@ -66,7 +66,7 @@ func TestLibraryOverview_OKAndStaleFlag(t *testing.T) {
 	s, st, _ := newTestServer(t, now)
 	ctx := context.Background()
 
-	if err := st.WriteLibraryAggregates(ctx, sampleAgg()); err != nil {
+	if err := st.WriteLibraryAggregates(ctx, sampleAgg(), nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.SetRefreshMeta(ctx, store.RefreshMeta{Job: "library", LastRunAt: now.Add(-10 * time.Minute), OK: true}); err != nil {

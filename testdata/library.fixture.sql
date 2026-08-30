@@ -17,6 +17,8 @@ CREATE TABLE BaseItems (
   TopParentId    TEXT,
   Width          INTEGER,
   Height         INTEGER,
+  SeriesId       TEXT,
+  SeriesName     TEXT,
   IsVirtualItem  INTEGER DEFAULT 0,
   IsFolder       INTEGER DEFAULT 0
 );
@@ -48,11 +50,11 @@ INSERT INTO BaseItems
  ('00000000-0000-0000-0000-00000000000C', 'MediaBrowser.Controller.Entities.Movies.Movie', 'Charlie', '/data/video/movies/Charlie (2019)/Charlie',   NULL,        90000000000, '2024-02-10 10:00:00.0000000', 2019, 'Drama',          '1F000000-0000-0000-0000-0000000000F1', 1280, 720),
  ('00000000-0000-0000-0000-00000000000D', 'MediaBrowser.Controller.Entities.Movies.Movie', 'Delta',   '/data/video/movies/Delta (2022)/Delta.mkv',   15000000000, 80000000000, '2024-03-02 10:00:00.0000000', 2022, 'Sci-Fi|Drama',   '1F000000-0000-0000-0000-0000000000F1', 3840, 2160);
 
--- episodes (Shows library)
+-- episodes (Shows library) — linked to the "Some Show" series row below
 INSERT INTO BaseItems
- (Id, Type, Name, Path, Size, RunTimeTicks, DateCreated, ProductionYear, Genres, TopParentId, Width, Height) VALUES
- ('00000000-0000-0000-0000-0000000000E1', 'MediaBrowser.Controller.Entities.TV.Episode', 'S1E1', '/data/video/shows/Show/S01/S1E1.mkv', 1200000000, 18000000000, '2024-02-15 10:00:00.0000000', 2020, 'Drama', '1F000000-0000-0000-0000-0000000000F2', 1920, 1080),
- ('00000000-0000-0000-0000-0000000000E2', 'MediaBrowser.Controller.Entities.TV.Episode', 'S1E2', '/data/video/shows/Show/S01/S1E2.MKV', 1300000000, 18000000000, '2024-03-16 10:00:00.0000000', 2020, 'Drama', '1F000000-0000-0000-0000-0000000000F2', 1920, 1080);
+ (Id, Type, Name, Path, Size, RunTimeTicks, DateCreated, ProductionYear, Genres, TopParentId, Width, Height, SeriesId, SeriesName) VALUES
+ ('00000000-0000-0000-0000-0000000000E1', 'MediaBrowser.Controller.Entities.TV.Episode', 'S1E1', '/data/video/shows/Show/S01/S1E1.mkv', 1200000000, 18000000000, '2024-02-15 10:00:00.0000000', 2020, 'Drama', '1F000000-0000-0000-0000-0000000000F2', 1920, 1080, '00000000-0000-0000-0000-0000000000F0', 'Some Show'),
+ ('00000000-0000-0000-0000-0000000000E2', 'MediaBrowser.Controller.Entities.TV.Episode', 'S1E2', '/data/video/shows/Show/S01/S1E2.MKV', 1300000000, 18000000000, '2024-03-16 10:00:00.0000000', 2020, 'Drama', '1F000000-0000-0000-0000-0000000000F2', 1920, 1080, '00000000-0000-0000-0000-0000000000F0', 'Some Show');
 
 -- excluded: a series row, and a virtual (missing) episode
 INSERT INTO BaseItems (Id, Type, Name, TopParentId, IsFolder) VALUES
@@ -69,3 +71,37 @@ INSERT INTO MediaStreamInfos (ItemId, StreamIndex, StreamType, Codec, Width, Hei
  ('00000000-0000-0000-0000-0000000000E1', 0, 1, 'av1',  1920, 1080, 'smpte2084', 8),       -- S1E1: Dolby Vision
  ('00000000-0000-0000-0000-0000000000E2', 0, 1, 'h264', 1920, 1080, '', NULL);             -- S1E2: SDR (blank transfer)
 -- Charlie deliberately has no video stream row.
+
+-- Users + per-user played state (Plan 2). Ids are dashed-uppercase like real
+-- jellyfin.db; the source layer normalizes to dashless-lowercase.
+CREATE TABLE Users (
+  Id       TEXT PRIMARY KEY,
+  Username TEXT NOT NULL
+);
+INSERT INTO Users (Id, Username) VALUES
+ ('11111111-2222-3333-4444-555555555555', 'alice'),
+ ('66666666-7777-8888-9999-aaaaaaaaaaaa', 'bob'),
+ ('00000000-0000-0000-0000-0000000000AA', 'never_watches');
+
+CREATE TABLE UserData (
+  ItemId         TEXT NOT NULL,
+  UserId         TEXT NOT NULL,
+  CustomDataKey  TEXT NOT NULL DEFAULT '',
+  LastPlayedDate TEXT,
+  PlayCount      INTEGER NOT NULL DEFAULT 0,
+  Played         INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (ItemId, UserId, CustomDataKey)
+);
+INSERT INTO UserData (ItemId, UserId, CustomDataKey, LastPlayedDate, PlayCount, Played) VALUES
+ -- Bravo: alice finished it 3x, recently  -> not "never", not "stale"
+ ('00000000-0000-0000-0000-00000000000B', '11111111-2222-3333-4444-555555555555', 'k1', '2025-06-01 20:00:00.000', 3, 1),
+ -- Charlie: bob watched once, long ago  -> "stale"
+ ('00000000-0000-0000-0000-00000000000C', '66666666-7777-8888-9999-aaaaaaaaaaaa', 'k1', '2023-01-05 21:00:00.000', 1, 1),
+ -- Delta: two CustomDataKey rows for the same (item,user); MAX must win
+ ('00000000-0000-0000-0000-00000000000D', '11111111-2222-3333-4444-555555555555', 'k1', '2025-05-01 10:00:00.000', 1, 0),
+ ('00000000-0000-0000-0000-00000000000D', '11111111-2222-3333-4444-555555555555', 'k2', '2025-05-02 10:00:00.000', 2, 1),
+ -- S1E1: bob, partial (Played=0 but LastPlayedDate set) -> series "Some Show" is NOT "never"
+ ('00000000-0000-0000-0000-0000000000E1', '66666666-7777-8888-9999-aaaaaaaaaaaa', 'k1', '2025-04-10 22:00:00.000', 1, 0),
+ -- a UserData row for a user absent from Users (must not crash the join)
+ ('00000000-0000-0000-0000-00000000000B', '00000000-0000-0000-0000-0000000000BB', 'k1', '2025-02-02 02:00:00.000', 1, 1);
+-- Alpha, S1E2: no UserData at all -> "never watched"

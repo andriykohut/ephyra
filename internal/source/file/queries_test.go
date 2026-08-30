@@ -59,3 +59,58 @@ func TestDefaultQueryLibrary(t *testing.T) {
 		t.Fatalf("S1E2 DvProfile should be nil")
 	}
 }
+
+func TestQueryLibrary_PlayedStateAndUsers(t *testing.T) {
+	snap, err := defaultQueryLibrary(openFixture(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	byName := map[string]source.LibraryItem{}
+	for _, it := range snap.Items {
+		byName[it.Name] = it
+	}
+
+	if byName["Alpha"].ID != "0000000000000000000000000000000a" {
+		t.Errorf("Alpha.ID = %q", byName["Alpha"].ID)
+	}
+	if byName["S1E1"].SeriesID != "00000000000000000000000000000f0" &&
+		byName["S1E1"].SeriesID != "000000000000000000000000000000f0" {
+		t.Errorf("S1E1.SeriesID = %q", byName["S1E1"].SeriesID)
+	}
+	if byName["S1E1"].SeriesName != "Some Show" {
+		t.Errorf("S1E1.SeriesName = %q", byName["S1E1"].SeriesName)
+	}
+	if a := byName["Alpha"]; a.Played || a.PlayCount != 0 || !a.LastPlayedAt.IsZero() {
+		t.Errorf("Alpha played-state should be empty: %+v", a)
+	}
+	// Bravo: alice 3 + an orphan-user (not in Users) 1 -> SUM 4; still resolves.
+	if b := byName["Bravo"]; !b.Played || b.PlayCount != 4 || b.LastPlayedAt.IsZero() {
+		t.Errorf("Bravo played-state: %+v", b)
+	}
+	// Delta: two CustomDataKey rows, one user. per-user MAX(PlayCount)=2, then SUM over users = 2.
+	if d := byName["Delta"]; !d.Played || d.PlayCount != 2 {
+		t.Errorf("Delta played-state: %+v", d)
+	}
+
+	if len(snap.Users) != 3 {
+		t.Fatalf("want 3 users, got %d: %+v", len(snap.Users), snap.Users)
+	}
+	uname := map[string]string{}
+	for _, u := range snap.Users {
+		uname[u.ID] = u.Name
+	}
+	if uname["11111111222233334444555555555555"] != "alice" {
+		t.Errorf("user map: %+v", uname)
+	}
+
+	var sawSeries bool
+	for _, p := range snap.UserPlays {
+		if p.Scope == "series" && p.Name == "Some Show" {
+			sawSeries = true
+		}
+	}
+	if !sawSeries {
+		t.Errorf("expected a rolled-up series UserPlay for Some Show: %+v", snap.UserPlays)
+	}
+}
