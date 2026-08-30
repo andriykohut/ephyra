@@ -1,0 +1,9 @@
+/web/dist/*
+!/web/dist/.gitkeep
+/web/node_modules
+/ephyra
+*.db
+*.db-wal
+*.db-shm
+/dist
+.DS_Store
