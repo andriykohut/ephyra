@@ -8,4 +8,6 @@
 /dist
 .DS_Store
 /.playwright-mcp
-*.png
+# stray screenshots from visual checks; brand assets are excepted below
+/*.png
+!/docs/brand/*.png

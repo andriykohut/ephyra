@@ -1,4 +1,8 @@
-# Ephyra
+<p align="center">
+  <img src="docs/brand/banner.png" alt="ephyra" width="720" />
+</p>
+
+# ephyra
 
 A stats dashboard for Jellyfin. It reads copies of Jellyfin's SQLite files on a
 schedule, rolls them up into its own small database, and serves the result as a
