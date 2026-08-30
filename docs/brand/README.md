@@ -1,19 +1,24 @@
 # Brand
 
-The mark is a top-down **ephyra** — the juvenile jellyfish, eight arms each
-forking into two, around a central mouth. It's the app's palette: cyan to violet,
-with the amber mote at the centre.
+The mark is a top-down **ephyra** — the juvenile jellyfish: eight sweeping arms
+with a pinwheel lean, each forking at the tip with a bulb, hatch-fans in the
+clefts, a ringed clover manubrium at the centre. Neon line-art in the app's
+cyan-to-violet palette.
 
 ## Files
 
 | File | Use |
 |---|---|
-| `mark-full.svg` | Full colour (gradient + amber mote). Default. `web/public/icon.svg` is a copy. |
-| `mark-flat.svg` | Single cyan, mote knocked out in abyss. For favicons / anything below ~24px. `web/public/favicon.svg` is a copy. |
-| `mark-ink.svg` | Monochrome, for light backgrounds. |
-| `mark-outline.svg` | Stroke only. |
+| `mark-full.svg` | The detailed line-art mark. Hero / app icon / large use. `web/public/icon.svg` is a copy. |
+| `mark-ink.svg` | Same lines in ink, for light backgrounds. |
+| `mark-glyph.svg` | Simplified: 8 solid arms + hub, gradient. Use ~24–96px (sidebar, cards). |
+| `favicon.svg` | The glyph in flat cyan. Favicons and anything ~16–32px. `web/public/favicon.svg` is a copy. |
+| `banner.png` | README header. |
 
-The in-app wordmark is `web/src/components/Mark.tsx` (the full mark, inline) next
+Below ~48px the detailed mark turns to fuzz — switch to `mark-glyph.svg`, and to
+`favicon.svg` below ~24px.
+
+The in-app wordmark is `web/src/components/Mark.tsx` (the simplified glyph, inline) next
 to "ephyra" in Bricolage.
 
 ## Wordmark
