@@ -42,3 +42,21 @@ export interface LibraryOverview {
   by_decade: LabeledCount[];
   growth: GrowthPoint[];
 }
+
+export interface CleanupItem {
+  item_id: string;
+  scope: "movie" | "series" | "episode";
+  name: string;
+  library: string;
+  bytes: number;
+  episodes: number;
+  added_at: string;
+  last_played_at: string | null;
+}
+export interface Cleanup {
+  mode: "never" | "stale";
+  reclaimable_bytes: number;
+  match_count: number;
+  truncated: boolean;
+  items: CleanupItem[];
+}
