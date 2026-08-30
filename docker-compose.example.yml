@@ -1,0 +1,19 @@
+# Copy to docker-compose.yml, fill in OWNER, the Jellyfin config path, and the
+# API key, then `docker compose up -d`. Browse to http://<host>:8080.
+services:
+  ephyra:
+    image: ghcr.io/OWNER/ephyra:latest
+    environment:
+      JELLYFIN_URL: http://jellyfin:8096
+      JELLYFIN_API_KEY: ${EPHYRA_JELLYFIN_API_KEY}
+      JELLYFIN_DATA_DIR: /jellyfin-data
+    volumes:
+      # Jellyfin's config dir, read-only. Ephyra reads copies of
+      # /jellyfin-data/data/library.db (and, later, playback_reporting.db).
+      - /path/to/jellyfin/config:/jellyfin-data:ro
+      - ephyra-data:/data
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+volumes:
+  ephyra-data:
