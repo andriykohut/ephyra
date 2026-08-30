@@ -2,6 +2,7 @@ package file
 
 import (
 	"database/sql"
+	"path"
 	"strings"
 	"time"
 
@@ -10,17 +11,25 @@ import (
 
 func init() { queryLibrary = defaultQueryLibrary }
 
+// Jellyfin's .NET entity class names. Unchanged across the library.db ->
+// jellyfin.db (EF-Core) move in 10.11.
 const (
 	movieType            = "MediaBrowser.Controller.Entities.Movies.Movie"
 	episodeType          = "MediaBrowser.Controller.Entities.TV.Episode"
 	seriesType           = "MediaBrowser.Controller.Entities.TV.Series"
+	folderType           = "MediaBrowser.Controller.Entities.Folder"
 	collectionFolderType = "MediaBrowser.Controller.Entities.CollectionFolder"
 )
 
 // libraryQuery pulls movies and episodes joined to their primary video stream
-// (lowest StreamIndex) and to the name of their top-level library folder.
-// TopParentId is matched to hex(folder.guid) after stripping dashes and
-// upper-casing, since Jellyfin builds vary on that column's formatting.
+// (lowest StreamIndex) and to their library name. jellyfin.db (10.11+):
+// BaseItems / MediaStreamInfos, Id and TopParentId are dashed-uppercase GUID
+// strings that match directly, StreamType is an int enum (1 = Video).
+//
+// TopParentId points at the physical root Folder (name = the on-disk directory,
+// e.g. "movies"). When a CollectionFolder shares that name case-insensitively we
+// use its display name ("Movies") instead. AncestorIds would be the "proper"
+// route but it's incomplete in practice.
 const libraryQuery = `
 WITH pvs AS (
   SELECT ItemId,
@@ -29,35 +38,38 @@ WITH pvs AS (
          ColorTransfer AS color_transfer,
          DvProfile     AS dv_profile,
          ROW_NUMBER() OVER (PARTITION BY ItemId ORDER BY StreamIndex) AS rn
-  FROM MediaStreams
-  WHERE StreamType = 'Video'
+  FROM MediaStreamInfos
+  WHERE StreamType = 1
 ),
 folders AS (
-  SELECT upper(hex(guid)) AS fid, Name AS lib
-  FROM TypedBaseItems
-  WHERE type = ?
+  SELECT phys.Id AS fid, COALESCE(coll.Name, phys.Name) AS lib
+  FROM BaseItems phys
+  LEFT JOIN BaseItems coll
+    ON coll.Type = '` + collectionFolderType + `'
+   AND lower(coll.Name) = lower(phys.Name)
+  WHERE phys.Type IN ('` + folderType + `', '` + collectionFolderType + `')
 )
 SELECT
   i.Name,
-  i.type,
+  i.Type,
   COALESCE(i.Size, 0),
   COALESCE(i.RunTimeTicks, 0),
   COALESCE(i.DateCreated, ''),
   COALESCE(i.ProductionYear, 0),
   COALESCE(i.Genres, ''),
   COALESCE(f.lib, 'Unknown'),
-  COALESCE(i.Container, ''),
+  COALESCE(i.Path, ''),
   v.codec, v.width, v.color_transfer, v.dv_profile
-FROM TypedBaseItems i
-LEFT JOIN pvs v     ON v.ItemId = i.guid AND v.rn = 1
-LEFT JOIN folders f ON f.fid = upper(replace(COALESCE(i.TopParentId, ''), '-', ''))
-WHERE i.type IN (?, ?)
+FROM BaseItems i
+LEFT JOIN pvs v     ON v.ItemId = i.Id AND v.rn = 1
+LEFT JOIN folders f ON f.fid = i.TopParentId
+WHERE i.Type IN (?, ?)
   AND COALESCE(i.IsVirtualItem, 0) = 0
   AND COALESCE(i.IsFolder, 0) = 0
 `
 
 func defaultQueryLibrary(db *sql.DB) (source.LibrarySnapshot, error) {
-	rows, err := db.Query(libraryQuery, collectionFolderType, movieType, episodeType)
+	rows, err := db.Query(libraryQuery, movieType, episodeType)
 	if err != nil {
 		return source.LibrarySnapshot{}, err
 	}
@@ -66,13 +78,13 @@ func defaultQueryLibrary(db *sql.DB) (source.LibrarySnapshot, error) {
 	var snap source.LibrarySnapshot
 	for rows.Next() {
 		var (
-			name, typ, dateRaw, genres, library, container string
-			size, ticks                                    int64
-			year                                           int
-			codec, colorTransfer                           sql.NullString
-			width, dvProfile                               sql.NullInt64
+			name, typ, dateRaw, genres, library, itemPath string
+			size, ticks                                   int64
+			year                                          int
+			codec, colorTransfer                          sql.NullString
+			width, dvProfile                              sql.NullInt64
 		)
-		if err := rows.Scan(&name, &typ, &size, &ticks, &dateRaw, &year, &genres, &library, &container,
+		if err := rows.Scan(&name, &typ, &size, &ticks, &dateRaw, &year, &genres, &library, &itemPath,
 			&codec, &width, &colorTransfer, &dvProfile); err != nil {
 			return source.LibrarySnapshot{}, err
 		}
@@ -86,7 +98,7 @@ func defaultQueryLibrary(db *sql.DB) (source.LibrarySnapshot, error) {
 			Year:          year,
 			Genres:        splitGenres(genres),
 			Library:       library,
-			Container:     container,
+			Container:     containerFromPath(itemPath),
 			VideoCodec:    codec.String,
 			Width:         int(width.Int64),
 			HasVideo:      width.Valid || codec.Valid,
@@ -103,7 +115,7 @@ func defaultQueryLibrary(db *sql.DB) (source.LibrarySnapshot, error) {
 	}
 
 	if err := db.QueryRow(
-		`SELECT count(*) FROM TypedBaseItems WHERE type = ? AND COALESCE(IsVirtualItem,0)=0`, seriesType,
+		`SELECT count(*) FROM BaseItems WHERE Type = ? AND COALESCE(IsVirtualItem,0)=0`, seriesType,
 	).Scan(&snap.SeriesCount); err != nil {
 		return source.LibrarySnapshot{}, err
 	}
@@ -115,6 +127,11 @@ func shortType(t string) string {
 		return "movie"
 	}
 	return "episode"
+}
+
+// jellyfin.db has no Container column; take it from the file extension.
+func containerFromPath(p string) string {
+	return strings.ToLower(strings.TrimPrefix(path.Ext(p), "."))
 }
 
 func splitGenres(s string) []string {
@@ -130,8 +147,8 @@ func splitGenres(s string) []string {
 	return out
 }
 
-// Jellyfin writes DateCreated in a few shapes depending on version. Try the
-// likely ones; give up quietly (zero time) rather than erroring a whole refresh.
+// Jellyfin writes DateCreated a few ways depending on version. Try the likely
+// ones; give up quietly (zero time) rather than erroring a whole refresh.
 var jellyfinTimeLayouts = []string{
 	time.RFC3339Nano,
 	time.RFC3339,

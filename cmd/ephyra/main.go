@@ -106,8 +106,8 @@ func buildSource(cfg config.Config, log *slog.Logger) (source.Source, error) {
 	}
 	if mt.IsZero() {
 		return nil, fmt.Errorf(
-			"no Jellyfin library DB at %s/data/library.db — check JELLYFIN_DATA_DIR and that the mount is present",
-			cfg.JellyfinDataDir)
+			"no Jellyfin item DB under %s/data/ or %s/data/data/ (looked for jellyfin.db, library.db) — check JELLYFIN_DATA_DIR and that the mount is present",
+			cfg.JellyfinDataDir, cfg.JellyfinDataDir)
 	}
 	return fsrc, nil
 }
