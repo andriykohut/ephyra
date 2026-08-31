@@ -1,0 +1,87 @@
+[
+  {
+    "Id": "eeee4444ffff5555aaaa6666bbbb7777",
+    "UserId": "55555555666666667777777788888888",
+    "UserName": "bob",
+    "Client": "Jellyfin Web",
+    "DeviceName": "Firefox",
+    "RemoteEndPoint": "203.0.113.44",
+    "LastActivityDate": "2026-01-15T22:05:10.000000Z",
+    "IsActive": true,
+    "PlayState": {
+      "PositionTicks": 6000000000,
+      "CanSeek": true,
+      "IsPaused": true,
+      "IsMuted": false,
+      "AudioStreamIndex": 1,
+      "MediaSourceId": "0123456789abcdef0123456789abcdef",
+      "PlayMethod": "Transcode"
+    },
+    "TranscodingInfo": {
+      "AudioCodec": "aac",
+      "VideoCodec": "h264",
+      "Container": "ts",
+      "IsVideoDirect": false,
+      "IsAudioDirect": true,
+      "Bitrate": 9200000,
+      "Width": 1280,
+      "Height": 720,
+      "AudioChannels": 2,
+      "Framerate": 23.976,
+      "CompletionPercentage": 41.3,
+      "HardwareAccelerationType": "qsv",
+      "TranscodeReasons": [
+        "VideoCodecNotSupported",
+        "ContainerBitrateExceedsLimit"
+      ]
+    },
+    "NowPlayingItem": {
+      "Name": "Deep Field",
+      "ServerId": "99999999888888887777777766666666",
+      "Id": "0123456789abcdef0123456789abcdef",
+      "Container": "mkv",
+      "RunTimeTicks": 66000000000,
+      "ProductionYear": 2024,
+      "Type": "Movie",
+      "MediaType": "Video",
+      "ParentBackdropItemId": "0123456789abcdef0123456789abcdef",
+      "ParentBackdropImageTags": [
+        "9a9a9a9a8b8b8b8b7c7c7c7c6d6d6d6d"
+      ],
+      "ImageTags": {
+        "Primary": "1d1d1d1d2c2c2c2c3b3b3b3b4a4a4a4a"
+      },
+      "Width": 3840,
+      "Height": 2160,
+      "MediaStreams": [
+        {
+          "Codec": "hevc",
+          "VideoRange": "HDR",
+          "VideoRangeType": "HDR10",
+          "DisplayTitle": "2160p HEVC HDR10",
+          "BitRate": 58000000,
+          "Height": 2160,
+          "Width": 3840,
+          "IsDefault": true,
+          "Profile": "Main 10",
+          "Type": "Video",
+          "Index": 0
+        },
+        {
+          "Codec": "eac3",
+          "Language": "eng",
+          "DisplayTitle": "English - Dolby Digital+ - 5.1 - Default",
+          "ChannelLayout": "5.1",
+          "BitRate": 768000,
+          "Channels": 6,
+          "IsDefault": true,
+          "Type": "Audio",
+          "Index": 1
+        }
+      ]
+    },
+    "DeviceId": "example-web-firefox",
+    "ApplicationVersion": "10.11.11",
+    "ServerId": "99999999888888887777777766666666"
+  }
+]
