@@ -16,8 +16,9 @@ Named after the juvenile stage of a jellyfin— sorry, jellyfish.
 
 **This build ships all four pages: Library, Watch Stats, Cleanup, and Now
 Playing.** Watch Stats needs the Playback Reporting plugin and shows an "enable
-this plugin" panel without it. Now Playing needs a working API key and degrades
-to a notice without one. Library and Cleanup work against core Jellyfin alone.
+this plugin" panel without it. Now Playing needs a working API key; with a bad
+one it degrades to a notice. Library and Cleanup work against core Jellyfin
+alone, though the key is required for Ephyra to start at all.
 
 ## What you need
 
@@ -26,8 +27,8 @@ to a notice without one. Library and Cleanup work against core Jellyfin alone.
   read-only.
 - A Jellyfin API key: **Dashboard → API Keys → +**, name it `ephyra`. Put it in
   `EPHYRA_JELLYFIN_API_KEY`. It powers Now Playing and the header's server
-  name/version; a wrong or missing key degrades Now Playing but doesn't stop
-  Ephyra.
+  name/version. Ephyra won't start without it. A key that's set but wrong is
+  survivable: Now Playing degrades to a notice, the other three pages carry on.
 
 ## Run it
 
@@ -176,7 +177,7 @@ JELLYFIN_URL=x JELLYFIN_API_KEY=x JELLYFIN_DATA_DIR=/tmp/jf \
 ## Design docs
 
 `docs/superpowers/specs/` has the design spec; `docs/superpowers/plans/` has the
-implementation plans. This is Plan 1 of 3.
+implementation plans. All three are done.
 
 ## License
 
