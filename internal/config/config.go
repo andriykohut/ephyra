@@ -37,7 +37,7 @@ func Load(getenv func(string) string) (Config, error) {
 		Source:           def(getenv("SOURCE"), "auto"),
 		StorePath:        def(getenv("STORE_PATH"), "/data/ephyra.db"),
 		WorkDir:          def(getenv("WORK_DIR"), "/data/work"),
-		ListenAddr:       def(getenv("LISTEN_ADDR"), ":8080"),
+		ListenAddr:       def(getenv("LISTEN_ADDR"), ":8097"),
 		RefreshLibrary:   30 * time.Minute,
 		RefreshWatch:     10 * time.Minute,
 		LivePollInterval: 4 * time.Second,
