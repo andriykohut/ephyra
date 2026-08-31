@@ -48,12 +48,42 @@ jobs:
           cache-to: type=gha,mode=max
 
   release:
-    needs: image
+    needs: [ci, image]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - run: gh release create "$GITHUB_REF_NAME" --generate-notes --verify-tag
+      # the binary embeds web/dist, so the frontend has to exist before go build
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - run: npm ci
+        working-directory: web
+      - run: npm run build
+        working-directory: web
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      - name: Cross-compile binaries
+        run: |
+          set -euo pipefail
+          v="$GITHUB_REF_NAME"
+          mkdir -p dist
+          for t in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
+            os="${t%/*}"; arch="${t#*/}"
+            d="ephyra_${v}_${os}_${arch}"
+            CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath \
+              -ldflags "-s -w -X github.com/andriykohut/ephyra/internal/buildinfo.version=${v}" \
+              -o "dist/${d}/ephyra" ./cmd/ephyra
+            cp LICENSE NOTICES.md README.md "dist/${d}/"
+            tar -C dist -czf "dist/${d}.tar.gz" "${d}"
+            rm -rf "dist/${d}"
+          done
+          ( cd dist && sha256sum ephyra_*.tar.gz | tee SHA256SUMS )
+      - name: Publish release
+        run: >
+          gh release create "$GITHUB_REF_NAME" --generate-notes --verify-tag
+          dist/ephyra_*.tar.gz dist/SHA256SUMS
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
