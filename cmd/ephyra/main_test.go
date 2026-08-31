@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"io"
@@ -9,11 +10,14 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/andriykohut/ephyra/internal/api"
 	"github.com/andriykohut/ephyra/internal/config"
+	"github.com/andriykohut/ephyra/internal/jellyfin"
+	"github.com/andriykohut/ephyra/internal/live"
 	"github.com/andriykohut/ephyra/internal/scheduler"
 	"github.com/andriykohut/ephyra/internal/source/file"
 	"github.com/andriykohut/ephyra/internal/store"
@@ -126,5 +130,72 @@ func TestSmoke_PluginAbsent(t *testing.T) {
 	}
 	if get(t, h, "/api/cleanup").Code != 200 {
 		t.Fatal("cleanup should be unaffected by the missing plugin")
+	}
+}
+
+func TestSmoke_NowPlaying(t *testing.T) {
+	jf := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/System/Info":
+			w.Write([]byte(`{"ServerName":"Stub","Version":"10.11.11"}`))
+		case "/Sessions":
+			b, _ := os.ReadFile(filepath.Join(repoRootForSmoke(t), "testdata", "sessions.directplay.json"))
+			w.Write(b)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer jf.Close()
+
+	dataDir := testsupport.TwoDBLayout(t)
+	ctx := context.Background()
+	st, _ := store.Open(ctx, filepath.Join(t.TempDir(), "e.db"))
+	t.Cleanup(func() { st.Close() })
+	cfg := config.Config{JellyfinDataDir: dataDir, WorkDir: t.TempDir(), JellyfinURL: jf.URL, JellyfinAPIKey: "K", LivePollInterval: time.Second, RefreshLibrary: time.Hour, RefreshWatch: time.Hour}
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	hub := live.New(jellyfin.New(cfg), cfg.LivePollInterval, nil, log)
+	t.Cleanup(hub.Close)
+	hub.Prime(ctx)
+	h := api.New(api.Deps{Store: st, Cfg: cfg, Log: log, Live: hub}).Handler()
+
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/now-playing", nil))
+	if rr.Code != 200 {
+		t.Fatalf("now-playing -> %d", rr.Code)
+	}
+	var env struct {
+		Data live.Snapshot `json:"data"`
+	}
+	json.Unmarshal(rr.Body.Bytes(), &env)
+	if len(env.Data.Sessions) != 1 || env.Data.Sessions[0].Title != "The Long Retreat" {
+		t.Fatalf("snapshot: %+v", env.Data)
+	}
+
+	// the stream yields a snapshot frame
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+	resp, err := http.Get(srv.URL + "/api/now-playing/stream")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	line, _ := bufio.NewReader(resp.Body).ReadString('\n')
+	if !strings.HasPrefix(line, "event: snapshot") {
+		t.Fatalf("first SSE frame = %q", line)
+	}
+}
+
+func repoRootForSmoke(t *testing.T) string {
+	t.Helper()
+	d, _ := os.Getwd()
+	for {
+		if _, err := os.Stat(filepath.Join(d, "go.mod")); err == nil {
+			return d
+		}
+		p := filepath.Dir(d)
+		if p == d {
+			t.Fatal("go.mod not found")
+		}
+		d = p
 	}
 }
