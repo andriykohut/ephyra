@@ -1,4 +1,3 @@
-// biome-ignore-all lint/style/noNonNullAssertion: test drives FakeES.last / the current snapshot right after asserting they exist
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { Snapshot } from "@/api/types";
@@ -27,6 +26,11 @@ class FakeES {
     this.readyState = 2; // CLOSED
   }
 }
+
+// the tests assert these exist before reaching for them; the casts keep the
+// bodies free of non-null assertions.
+const es = () => FakeES.last as FakeES;
+const sessions = (s: Snapshot | null) => (s as Snapshot).sessions;
 
 const snap = (over: Partial<Snapshot> = {}): Snapshot => ({
   server: { name: "S", version: "10.11.11" },
@@ -69,6 +73,7 @@ beforeEach(() => {
   );
 });
 afterEach(() => {
+  Object.defineProperty(document, "hidden", { value: false, configurable: true });
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.useRealTimers();
@@ -80,7 +85,7 @@ test("first paint from the one-shot, then EventSource takes over", async () => {
   expect(FakeES.last?.url).toContain("/api/now-playing/stream");
 
   act(() =>
-    FakeES.last!.emit(
+    es().emit(
       "update",
       snap({ summary: { streams: 2, transcodes: 1, outbound_bitrate: 9e6, capacity: null } }),
     ),
@@ -92,9 +97,12 @@ test("first paint from the one-shot, then EventSource takes over", async () => {
 test("degraded event sets the flag; a later update clears it", async () => {
   const { result } = renderHook(() => useNowPlaying());
   await waitFor(() => expect(result.current.snapshot).not.toBeNull());
-  act(() => FakeES.last!.emit("degraded", { degraded: true }));
+  act(() => es().emit("degraded", { degraded: true }));
   expect(result.current.degraded).toBe(true);
-  act(() => FakeES.last!.emit("update", snap()));
+  // the whole point of the degraded frame: what was on screen stays on screen
+  expect(sessions(result.current.snapshot)).toHaveLength(1);
+  expect(sessions(result.current.snapshot)[0].title).toBe("T");
+  act(() => es().emit("update", snap()));
   expect(result.current.degraded).toBe(false);
 });
 
@@ -103,22 +111,50 @@ test("interpolates position for non-paused sessions", async () => {
   const { result } = renderHook(() => useNowPlaying());
   // waitFor deadlocks under fake timers (its own poll never ticks), so flush the
   // one-shot fetch by hand instead.
-  await vi.runOnlyPendingTimersAsync();
+  await act(async () => {
+    await vi.runOnlyPendingTimersAsync();
+  });
   expect(result.current.snapshot).not.toBeNull();
-  const p0 = result.current.snapshot!.sessions[0].position_sec;
+  const p0 = sessions(result.current.snapshot)[0].position_sec;
   act(() => vi.advanceTimersByTime(3000));
-  expect(result.current.snapshot!.sessions[0].position_sec).toBeGreaterThanOrEqual(p0 + 2);
+  expect(sessions(result.current.snapshot)[0].position_sec).toBeGreaterThanOrEqual(p0 + 2);
+});
+
+test("paused sessions do not advance, and the advance stops at runtime_sec", async () => {
+  vi.useFakeTimers();
+  const { result } = renderHook(() => useNowPlaying());
+  await act(async () => {
+    await vi.runOnlyPendingTimersAsync();
+  });
+
+  const base = snap();
+  const [only] = base.sessions;
+  act(() =>
+    es().emit("update", {
+      ...base,
+      sessions: [
+        { ...only, session_id: "paused", paused: true, position_sec: 100 },
+        { ...only, session_id: "ending", position_sec: 5998, runtime_sec: 6000 },
+      ],
+    }),
+  );
+  act(() => vi.advanceTimersByTime(10_000));
+
+  const [paused, ending] = sessions(result.current.snapshot);
+  expect(paused.position_sec).toBe(100);
+  expect(ending.position_sec).toBe(6000);
+  expect(ending.progress_pct).toBeLessThanOrEqual(100);
 });
 
 test("closes the EventSource when the tab is hidden", async () => {
   const { result } = renderHook(() => useNowPlaying());
   await waitFor(() => expect(result.current.snapshot).not.toBeNull());
-  const es = FakeES.last!;
+  const opened = es();
   act(() => {
     Object.defineProperty(document, "hidden", { value: true, configurable: true });
     document.dispatchEvent(new Event("visibilitychange"));
   });
-  expect(es.closed).toBe(true);
+  expect(opened.closed).toBe(true);
 });
 
 test("an EventSource error flips conn to reconnecting; a later frame restores it", async () => {
@@ -129,6 +165,6 @@ test("an EventSource error flips conn to reconnecting; a later frame restores it
   act(() => FakeES.last?.onerror?.(new Event("error")));
   expect(result.current.conn).toBe("reconnecting");
 
-  act(() => FakeES.last!.emit("update", snap()));
+  act(() => es().emit("update", snap()));
   expect(result.current.conn).toBe("live");
 });
