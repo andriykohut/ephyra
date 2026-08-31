@@ -9,7 +9,8 @@ services:
       JELLYFIN_DATA_DIR: /jellyfin-data
     volumes:
       # Jellyfin's config dir, read-only. Ephyra reads copies of
-      # /jellyfin-data/data/library.db (and, later, playback_reporting.db).
+      # /jellyfin-data/data/jellyfin.db, plus playback_reporting.db if the
+      # Playback Reporting plugin is installed.
       - /path/to/jellyfin/config:/jellyfin-data:ro
       - ephyra-data:/data
     ports:

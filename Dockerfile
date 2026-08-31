@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # --- build the frontend ---
-FROM node:24-alpine AS web
+FROM --platform=$BUILDPLATFORM node:24-alpine AS web
 WORKDIR /app/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
@@ -9,14 +9,18 @@ COPY web/ ./
 RUN npm run build
 
 # --- build the binary, with the frontend embedded ---
-FROM golang:1.25-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS build
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 COPY --from=web /app/web/dist ./web/dist
 ARG VERSION=dev
-RUN CGO_ENABLED=0 go build -trimpath \
+# TARGETOS/TARGETARCH come from buildx. The binary is pure Go, so a native
+# cross-compile beats emulating the whole toolchain under QEMU.
+ARG TARGETOS
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath \
     -ldflags "-s -w -X github.com/andriykohut/ephyra/internal/buildinfo.version=${VERSION}" \
     -o /ephyra ./cmd/ephyra
 # /data is where STORE_PATH and WORK_DIR live; make it writable by the nonroot

@@ -77,10 +77,12 @@ test("shows an error state on 503", async () => {
   await waitFor(() => expect(screen.getByText(/first refresh/i)).toBeInTheDocument());
 });
 
-test("growthForChart drops the 1970-01 epoch bucket", () => {
+test("growthForChart drops epoch buckets on either side of the date line", () => {
   const g = [
-    { month: "1970-01", added_items: 3, cum_items: 3, added_bytes: 0 },
-    { month: "2024-01", added_items: 40, cum_items: 43, added_bytes: 1e9 },
+    // west of UTC the epoch buckets to 1969-12, not 1970-01
+    { month: "1969-12", added_items: 1, cum_items: 1, added_bytes: 0 },
+    { month: "1970-01", added_items: 3, cum_items: 4, added_bytes: 0 },
+    { month: "2024-01", added_items: 40, cum_items: 44, added_bytes: 1e9 },
   ];
   expect(growthForChart(g).map((p) => p.month)).toEqual(["2024-01"]);
 });

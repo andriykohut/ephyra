@@ -74,10 +74,12 @@ function growthOption(g: { month: string; added_items: number; cum_items: number
 }
 
 export function growthForChart<T extends { month: string }>(g: T[]): T[] {
-  // The API returns items with a broken (unix-epoch) DateCreated in a "1970-01"
-  // bucket. That's real source data — kept in the API — but plotting it wrecks
-  // the axis. Rendering is where this belongs.
-  return g.filter((p) => p.month !== "1970-01");
+  // Items with a broken (unix-epoch) DateCreated land in a bucket around 1970.
+  // That's real source data — kept in the API and in every count — but plotting
+  // it wrecks the axis, and rendering is where that belongs. A floor rather than
+  // an exact "1970-01": buckets are computed in the server's TZ, so west of UTC
+  // the epoch falls into "1969-12".
+  return g.filter((p) => p.month >= "1990-01");
 }
 
 const gbRows = (d: DiskBucket[]) =>

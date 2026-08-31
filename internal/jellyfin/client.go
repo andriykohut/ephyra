@@ -63,10 +63,14 @@ func (c *Client) SystemInfo(ctx context.Context) (ServerInfo, error) {
 // closes it.
 func (c *Client) Image(ctx context.Context, itemID string, kind ImageKind, tag string) (io.ReadCloser, string, error) {
 	path := "/Items/" + url.PathEscape(itemID) + "/Images/" + string(kind)
-	u := c.base + path
+	// The card renders a ~96px poster, so there is no reason to pull the
+	// original. Jellyfin resizes server-side and this is the difference between
+	// a few KB and a few MB per session.
+	q := url.Values{"maxWidth": {"480"}, "quality": {"85"}}
 	if tag != "" {
-		u += "?tag=" + url.QueryEscape(tag)
+		q.Set("tag", tag)
 	}
+	u := c.base + path + "?" + q.Encode()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, "", err

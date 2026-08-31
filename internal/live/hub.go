@@ -259,10 +259,16 @@ func (h *Hub) pollOnce() error {
 }
 
 // changed reports whether next is meaningfully different from prev: a new or
-// gone session, a pause / play-method / remote flip, a transcode target change,
-// or progress that moved at least a whole percent.
+// gone session, a different item in the same session, a pause / play-method /
+// remote flip, a transcode target change, or progress that moved at least a
+// whole percent. Server counts too — a Prime that failed leaves it empty, and
+// without this the recovered name would be dropped along with the snapshot and
+// the header would stay blank until something started playing.
 func changed(prev, next *Snapshot) bool {
 	if prev == nil || prev.Degraded != next.Degraded || len(prev.Sessions) != len(next.Sessions) {
+		return true
+	}
+	if prev.Server != next.Server {
 		return true
 	}
 	pm := map[string]Session{}
@@ -275,6 +281,11 @@ func changed(prev, next *Snapshot) bool {
 			return true
 		}
 		if p.Paused != n.Paused || p.PlayMethod != n.PlayMethod || p.IsRemote != n.IsRemote {
+			return true
+		}
+		// a same-session item switch at a similar percentage would otherwise
+		// leave the old title and poster on screen
+		if p.ItemID != n.ItemID || p.Title != n.Title {
 			return true
 		}
 		if tcChanged(p.Transcode, n.Transcode) {

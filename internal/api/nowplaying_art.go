@@ -94,7 +94,9 @@ func (s *Server) handleNowPlayingArt(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "upstream", "art fetch failed")
 		return
 	}
-	body, err := io.ReadAll(rc)
+	// bounded so one oversized upstream image can't sit in the LRU; 8 MB is far
+	// above a resized poster or backdrop
+	body, err := io.ReadAll(io.LimitReader(rc, 8<<20))
 	_ = rc.Close()
 	if err != nil {
 		s.log.Warn("art read failed", "item", itemID, "kind", kind, "err", err)

@@ -3,6 +3,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # release.yml runs this same gate before it publishes anything
+  workflow_call:
 jobs:
   go:
     runs-on: ubuntu-latest

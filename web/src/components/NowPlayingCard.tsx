@@ -53,7 +53,11 @@ function Chip({ children, tone = "default" }: { children: ReactNode; tone?: Tone
 // the violet accent bar, a violet progress fill and the codec-conversion block,
 // so the two are told apart at a glance from across the room.
 export function NowPlayingCard({ s }: { s: NowSession }) {
-  const [posterOK, setPosterOK] = useState(true);
+  // Which item's art failed, not a bare boolean: the card is keyed by
+  // session_id, so a boolean would pin the placeholder for the rest of the
+  // session even after the user moves to an item whose art is fine.
+  const [failedItem, setFailedItem] = useState<string | null>(null);
+  const posterOK = failedItem !== s.item_id;
 
   const transcoding = s.play_method === "Transcode";
   const hdr = Boolean(s.source.video.range) && s.source.video.range !== "SDR";
@@ -83,7 +87,7 @@ export function NowPlayingCard({ s }: { s: NowSession }) {
             <img
               alt={`${s.title} poster`}
               src={artURL("primary", s.item_id, s.art.primary_tag)}
-              onError={() => setPosterOK(false)}
+              onError={() => setFailedItem(s.item_id)}
               decoding="async"
               className="aspect-[2/3] w-full rounded-lg object-cover shadow-lg shadow-abyss/60 ring-1 ring-line/70"
             />
