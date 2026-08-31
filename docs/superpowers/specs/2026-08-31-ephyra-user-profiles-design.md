@@ -111,6 +111,7 @@ is append-only and never DELETEd. It *is* the history.
 | `item_name` | TEXT | last-known name; the plugin's own value at ingest, refreshed from `jellyfin.db` on conflict. Retained verbatim once an item is deleted from Jellyfin. |
 | `series_id` | TEXT | canonical; `''` for movies / unresolved. From `jellyfin.db` enrichment only. |
 | `series_name` | TEXT | `''` for movies / unresolved |
+| `item_runtime_sec` / `item_year` / `item_genres` | INT / INT / TEXT | library-fact snapshot from the `jellyfin.db` enrichment, refreshed on conflict while the item exists, retained verbatim once it's deleted. `item_genres` is pipe-joined. **Stored** (not re-derived at read time) because `ReadPlaybackEvents` feeds `aggregate.Profiles` directly and the source enrichment only covers rows the plugin still has. |
 | `dedup_hash` | TEXT | `UNIQUE`. `sha1(at | "\x1f" | user_id | "\x1f" | item_id | "\x1f" | play_duration_sec)` |
 
 Indexes: `(user_id, item_id)`, `(at)`.
@@ -120,12 +121,15 @@ Indexes: `(user_id, item_id)`, `(at)`.
 ```sql
 INSERT INTO playback_events
   (at, user_id, item_id, item_type, method, play_duration_sec,
-   item_name, series_id, series_name, dedup_hash)
-VALUES (?,?,?,?,?,?,?,?,?,?)
+   item_name, series_id, series_name, item_runtime_sec, item_year, item_genres, dedup_hash)
+VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
 ON CONFLICT(dedup_hash) DO UPDATE SET
-  item_name   = excluded.item_name,
-  series_id   = excluded.series_id,
-  series_name = excluded.series_name;
+  item_name        = excluded.item_name,
+  series_id        = excluded.series_id,
+  series_name      = excluded.series_name,
+  item_runtime_sec = excluded.item_runtime_sec,
+  item_year        = excluded.item_year,
+  item_genres      = excluded.item_genres;
 ```
 
 The `ON CONFLICT` clause keeps names fresh for items that still exist while
@@ -180,12 +184,14 @@ also select, for the watched-item subset:
 - `ProductionYear` → `ItemYear int`
 
 New fields on `source.PlaybackEvent`: `ItemRuntimeSec int64`, `ItemGenres
-[]string`, `ItemYear int`. They are **not** stored in `playback_events` — they
-are library facts, re-resolved every run from the current `jellyfin.db` copy,
-and fed straight into `aggregate.Profiles` alongside the spine rows. An item
-deleted from Jellyfin loses its runtime/genre/year; its completion verdict for
-past days falls into the `unknown` bucket (§6.1), which is already how missing
-runtime is handled.
+[]string`, `ItemYear int`. `AppendPlaybackEvents` snapshots them into
+`playback_events` and `ReadPlaybackEvents` hands them back — the watch job feeds
+`aggregate.Profiles` from the spine read, and the source enrichment only covers
+rows the plugin still reports, so re-deriving at read time would leave every
+historical row blank. On conflict the snapshot is refreshed from the current
+`jellyfin.db` copy; an item deleted from Jellyfin keeps its last-known values,
+and a play the plugin recorded before Ephyra could resolve the item falls into
+the `unknown` bucket (§6.1), same as any missing-runtime row.
 
 No new HTTP calls to Jellyfin. The widened query hits the local copy only.
 
