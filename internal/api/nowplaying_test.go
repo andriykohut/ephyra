@@ -50,7 +50,7 @@ func nowServer(t *testing.T, sc stubClient) (*Server, *live.Hub) {
 
 func oneRawSession() []jellyfin.RawSession {
 	return []jellyfin.RawSession{{
-		ID: "sess1", UserName: "orlyk", RemoteEndPoint: "192.168.1.5",
+		ID: "sess1", UserName: "alice", RemoteEndPoint: "192.168.1.5",
 		PlayState: &jellyfin.RawPlayState{PositionTicks: 600 * 10_000_000, PlayMethod: "DirectPlay"},
 		NowPlayingItem: &jellyfin.RawItem{
 			ID: "item1", Name: "Movie X", Type: "Movie", MediaType: "Video", RunTimeTicks: 6000 * 10_000_000,
@@ -189,12 +189,18 @@ func TestNowPlaying_ArtProxyAndCache(t *testing.T) {
 func TestNowPlaying_ArtUpstreamError(t *testing.T) {
 	sc := stubClient{
 		sessions: func() ([]jellyfin.RawSession, error) { return nil, nil },
-		img:      func() (io.ReadCloser, string, error) { return nil, "", errors.New("upstream 404") },
+		img: func() (io.ReadCloser, string, error) {
+			return nil, "", errors.New(`Get "http://jellyfin.internal:8096/Items/x/Images/Primary": dial tcp: refused`)
+		},
 	}
 	s, _ := nowServer(t, sc)
 	rr := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/now-playing/art/8a5cc46f628a63cd9981105b4d50ccb7", nil))
 	if rr.Code != 502 {
 		t.Fatalf("want 502, got %d", rr.Code)
+	}
+	// the upstream URL is for the log, not the browser
+	if strings.Contains(rr.Body.String(), "jellyfin.internal") {
+		t.Fatalf("502 body leaked the upstream URL: %s", rr.Body.String())
 	}
 }

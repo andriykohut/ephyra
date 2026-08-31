@@ -2078,16 +2078,16 @@ func TestPlaybackEvents_ReadsAndEnriches(t *testing.T) {
 	}
 
 	// user name resolved from jellyfin.db
-	var sawColin bool
+	var sawBob bool
 	for _, e := range events {
 		if e.UserID == "66666666777788889999aaaaaaaaaaaa" {
 			if e.UserName != "bob" {
 				t.Errorf("bob not resolved: %q", e.UserName)
 			}
-			sawColin = true
+			sawBob = true
 		}
 	}
-	if !sawColin {
+	if !sawBob {
 		t.Error("no bob events")
 	}
 

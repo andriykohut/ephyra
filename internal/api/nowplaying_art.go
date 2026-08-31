@@ -18,6 +18,8 @@ type artEntry struct {
 	body []byte
 }
 
+// artCache is a tiny LRU in front of Jellyfin's image endpoint. Art is
+// immutable per tag, so a hit never needs revalidating.
 type artCache struct {
 	mu  sync.Mutex
 	cap int
@@ -57,6 +59,7 @@ func (c *artCache) put(key, ct string, body []byte) {
 	}
 }
 
+// handleNowPlayingArt proxies item art so the browser never needs the API key.
 func (s *Server) handleNowPlayingArt(w http.ResponseWriter, r *http.Request) {
 	if s.live == nil {
 		writeError(w, http.StatusServiceUnavailable, "not_ready", "live subsystem not configured")
@@ -86,13 +89,16 @@ func (s *Server) handleNowPlayingArt(w http.ResponseWriter, r *http.Request) {
 	}
 	rc, ct, err := s.live.Image(r.Context(), itemID, kind, tag)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "upstream", err.Error())
+		// err carries the Jellyfin base URL; that stays server-side.
+		s.log.Warn("art fetch failed", "item", itemID, "kind", kind, "err", err)
+		writeError(w, http.StatusBadGateway, "upstream", "art fetch failed")
 		return
 	}
 	body, err := io.ReadAll(rc)
 	_ = rc.Close()
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "upstream", err.Error())
+		s.log.Warn("art read failed", "item", itemID, "kind", kind, "err", err)
+		writeError(w, http.StatusBadGateway, "upstream", "art fetch failed")
 		return
 	}
 	s.art.put(key, ct, body)
