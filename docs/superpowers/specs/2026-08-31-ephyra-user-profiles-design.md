@@ -82,10 +82,16 @@ watch job tick (mtime-gated as today, plus: bypassed while playback_events is em
   └─ all := store.ReadPlaybackEvents(ctx)   ← the full accumulated history
   └─ aggregate.Watch(all)         → watch_events_daily, agg_watch_heatmap   (logic unchanged)
   └─ aggregate.Profiles(all, now) → agg_profile_*, agg_taste_baseline       (new)
-  └─ one txn: DELETE + re-INSERT every derived table above
-API handlers read ONLY the agg_* / *_daily tables, never playback_events directly
-  (except the spine's own coverage min/max, computed in the watch job and stored).
 ```
+
+Three sequential transactions per run: (1) `AppendPlaybackEvents`, (2)
+`WriteWatchAggregates` (its own txn, unchanged), (3) `WriteProfileAggregates`.
+The append is idempotent (`ON CONFLICT`), and the derived tables are full
+rewrites every run, so a crash between transactions self-heals — the next run
+rebuilds the derived tables from whatever the spine holds.
+
+API handlers read ONLY the `agg_*` / `*_daily` tables, plus `playback_events`'
+own min/max/count for the `coverage` block.
 
 `playback_events` is the exception to "every table is rewritten per refresh": it
 is append-only and never DELETEd. It *is* the history.
@@ -127,9 +133,9 @@ leaving deleted-item rows with their last good enrichment. Immutable columns
 (`at`, `user_id`, `item_id`, `item_type`, `method`, `play_duration_sec`) are
 never touched after first insert.
 
-The whole append batch runs inside the same transaction that rewrites the
-derived tables, so a mid-run crash leaves the spine and the aggregates
-consistent with each other.
+The append runs in its own transaction, before the derived-table rewrites. It
+is idempotent, so a crash between transactions self-heals: the next run
+re-appends (all no-ops) and rebuilds the derived tables.
 
 ### 4.2 Backfill on upgrade
 
@@ -301,14 +307,13 @@ rules). All list reads run through `orEmpty` so the API sees `[]`, never
 ### 7.2 Functions
 
 - `AppendPlaybackEvents(ctx, []source.PlaybackEvent) error` — the §4.1 upsert,
-  called inside the derived-table txn.
+  its own transaction.
 - `ReadPlaybackEvents(ctx) ([]source.PlaybackEvent, error)` — full history,
   ordered by `at`. Feeds both `aggregate.Watch` and `aggregate.Profiles`.
-- `SpineCoverage(ctx) (first, last string, total int, err error)` — for the
+- `SpineCoverage(ctx) (first, last string, total int64, err error)` — for the
   API `coverage` block.
-- `WriteProfileAggregates(ctx, ProfileAggregates) error` — DELETE + re-INSERT
-  every `agg_profile_*` and `agg_taste_baseline` row. Called in the same txn
-  as `WriteWatchAggregates` (see §8).
+- `WriteProfileAggregates(ctx, ProfileAggregates) error` — one transaction:
+  DELETE + re-INSERT every `agg_profile_*` and `agg_taste_baseline` row.
 - `ReadProfileList(ctx) (...)`, `ReadProfile(ctx, userID, range) (...)` — the
   two API reads.
 
@@ -322,13 +327,11 @@ rules). All list reads run through `orEmpty` so the API sees `[]`, never
 2. `events, err := s.src.PlaybackEvents(ctx, time.Time{})` — unchanged.
    `ErrPluginUnavailable` path is unchanged: record `plugin_available=false`,
    write nothing, the spine keeps its rows.
-3. Open one txn:
-   - `AppendPlaybackEvents(ctx, events)`
-   - `all, _ := ReadPlaybackEvents(ctx)` *(within the txn)*
-   - `WriteWatchAggregates(ctx, aggregate.Watch(all)...)` — unchanged callee.
-   - `WriteProfileAggregates(ctx, aggregate.Profiles(all, time.Now()))`
-   - commit
-4. `SetRefreshMeta` for `watch` as today. `stale` semantics unchanged.
+3. `AppendPlaybackEvents(ctx, events)` — txn 1.
+4. `all, _ := ReadPlaybackEvents(ctx)` — the full accumulated history.
+5. `WriteWatchAggregates(ctx, aggregate.Watch(all)...)` — txn 2, unchanged callee.
+6. `WriteProfileAggregates(ctx, aggregate.Profiles(all, s.now()))` — txn 3.
+7. `SetRefreshMeta` for `watch` as today. `stale` semantics unchanged.
 
 Cost: one full-history load + two O(n) roll-to-daily passes + a 4-range
 re-scan, per tick, mtime-gated. ~100–300 ms at the high end (few years of heavy
