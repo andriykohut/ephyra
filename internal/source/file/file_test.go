@@ -97,13 +97,13 @@ func TestPlaybackEvents_ReadsAndEnriches(t *testing.T) {
 		t.Fatalf("want 8 events, got %d", len(events))
 	}
 
-	var sawColin bool
+	var sawBob bool
 	for _, e := range events {
 		if e.UserID == "66666666777788889999aaaaaaaaaaaa" {
 			if e.UserName != "bob" {
 				t.Errorf("bob not resolved: %q", e.UserName)
 			}
-			sawColin = true
+			sawBob = true
 		}
 		if e.ItemType == "episode" && e.ItemID == "000000000000000000000000000000e1" {
 			if e.SeriesName != "Some Show" || e.SeriesID == "" {
@@ -127,7 +127,7 @@ func TestPlaybackEvents_ReadsAndEnriches(t *testing.T) {
 			}
 		}
 	}
-	if !sawColin {
+	if !sawBob {
 		t.Error("no bob events")
 	}
 }

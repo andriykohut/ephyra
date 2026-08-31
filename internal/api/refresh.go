@@ -16,5 +16,13 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	if s.trigger != nil {
 		s.trigger.Trigger(job)
 	}
-	writeJSON(w, http.StatusAccepted, map[string]any{"job": job, "queued": true}, s.meta(false))
+	// Trigger returns nothing, so "triggered" means "we asked the scheduler",
+	// not "the job finished". Fan out over whichever jobs this call covers.
+	data := map[string]map[string]bool{}
+	for _, j := range []string{"library", "watch"} {
+		if job == "all" || job == j {
+			data[j] = map[string]bool{"triggered": true}
+		}
+	}
+	writeJSON(w, http.StatusAccepted, data, s.meta(false))
 }

@@ -3,12 +3,11 @@ import { render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, expect, test, vi } from "vitest";
 import type { Envelope, LibraryOverview as LO } from "@/api/types";
+import { growthForChart, LibraryOverview } from "./library";
 
 vi.mock("@/charts/EChart", () => ({
   EChart: () => <div data-testid="echart" />,
 }));
-
-const { LibraryOverview } = await import("./library");
 
 const sample: Envelope<LO> = {
   data: {
@@ -76,4 +75,14 @@ test("shows an error state on 503", async () => {
   );
   render(wrap(<LibraryOverview />));
   await waitFor(() => expect(screen.getByText(/first refresh/i)).toBeInTheDocument());
+});
+
+test("growthForChart drops epoch buckets on either side of the date line", () => {
+  const g = [
+    // west of UTC the epoch buckets to 1969-12, not 1970-01
+    { month: "1969-12", added_items: 1, cum_items: 1, added_bytes: 0 },
+    { month: "1970-01", added_items: 3, cum_items: 4, added_bytes: 0 },
+    { month: "2024-01", added_items: 40, cum_items: 44, added_bytes: 1e9 },
+  ];
+  expect(growthForChart(g).map((p) => p.month)).toEqual(["2024-01"]);
 });

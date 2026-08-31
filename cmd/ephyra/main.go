@@ -15,6 +15,8 @@ import (
 	"github.com/andriykohut/ephyra/internal/api"
 	"github.com/andriykohut/ephyra/internal/buildinfo"
 	"github.com/andriykohut/ephyra/internal/config"
+	"github.com/andriykohut/ephyra/internal/jellyfin"
+	"github.com/andriykohut/ephyra/internal/live"
 	"github.com/andriykohut/ephyra/internal/scheduler"
 	"github.com/andriykohut/ephyra/internal/source"
 	"github.com/andriykohut/ephyra/internal/source/file"
@@ -63,6 +65,15 @@ func run() error {
 	sched := scheduler.New(st, src, cfg, log)
 	go sched.Run(ctx)
 
+	jc := jellyfin.New(cfg)
+	var capacity *int
+	if cfg.StreamCapacity > 0 {
+		capacity = &cfg.StreamCapacity
+	}
+	hub := live.New(jc, cfg.LivePollInterval, capacity, log)
+	defer hub.Close()
+	hub.Prime(ctx)
+
 	dist, err := web.DistFS()
 	if err != nil {
 		return err
@@ -73,6 +84,7 @@ func run() error {
 		Log:     log,
 		Trigger: sched,
 		Static:  api.NewStaticHandler(dist),
+		Live:    hub,
 	})
 	httpServer := &http.Server{Addr: cfg.ListenAddr, Handler: srv.Handler()}
 
@@ -90,6 +102,12 @@ func run() error {
 	case err := <-errCh:
 		return err
 	}
+	// Close the hub before Shutdown, not just via the deferred Close above:
+	// that defer runs only after Shutdown returns, and every open SSE stream
+	// would otherwise pin Shutdown for its full 5s timeout. Close drops the
+	// subscriber channels so each stream handler returns and its connection
+	// drains right away. Close is idempotent, so the defer is still a safe net.
+	hub.Close()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	return httpServer.Shutdown(shutdownCtx)

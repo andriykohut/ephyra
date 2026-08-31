@@ -20,6 +20,14 @@ export function fmtInt(n: number): string {
   return n.toLocaleString("en-US");
 }
 
+// Jellyfin hands us bits per second on the wire — stream BitRate fields and the
+// transcoder's target. Not bytes.
+export function fmtBitrate(bps: number): string {
+  if (bps >= 1_000_000) return `${(bps / 1_000_000).toFixed(1)} Mbps`;
+  if (bps >= 1_000) return `${Math.round(bps / 1_000)} kbps`;
+  return `${bps} bps`;
+}
+
 // "just now" / "6 min ago" / "3 h ago" / "2 d ago"
 export function timeAgo(iso: string): string {
   const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);

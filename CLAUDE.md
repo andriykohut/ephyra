@@ -6,9 +6,9 @@ Ephyra is a stats dashboard for Jellyfin: one Go binary with a React SPA baked i
 It reads *copies* of Jellyfin's SQLite files on a schedule and serves rolled-up
 aggregates. It never writes to Jellyfin or to the mounted directory.
 
-**Plans 1 and 2 of 3 are done** (Library Overview; Watch Stats & Cleanup). The
-design specs and implementation plans live in `docs/superpowers/`. Plan 3 is Now
-Playing (SSE) — `internal/live` and the `/now` route are still stubs.
+**All three plans done; v1 four-page surface complete.** (Library Overview; Watch
+Stats & Cleanup; Now Playing.) The design specs and implementation plans live in
+`docs/superpowers/`.
 
 ## Commands
 
@@ -79,6 +79,11 @@ API handlers read ONLY from store's agg_* tables, never from Jellyfin.
   `refresh_meta` row, or last run failed, or older than 2× the interval. Unknown
   `/api/*` paths return 404 JSON; every other GET falls through to the SPA
   (`index.html`).
+- `internal/jellyfin` / `internal/live` — the Now Playing live path, off to the
+  side of the pipeline above. `internal/jellyfin` is a thin read-only HTTP client
+  (not a `Source`). `internal/live` holds the SSE hub whose poll loop runs
+  **only** while a browser has `/now` open — zero standing load otherwise.
+  `hub.Prime` is non-fatal: Ephyra boots even with the Jellyfin API down.
 - `cmd/ephyra/main.go` — wiring + graceful shutdown. Picks the source, fails fast
   with a clear message if the item DB isn't reachable.
 

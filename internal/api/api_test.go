@@ -121,8 +121,39 @@ func TestRefreshEndpoint(t *testing.T) {
 	if rr.Code != http.StatusAccepted {
 		t.Fatalf("want 202, got %d", rr.Code)
 	}
+	// decoded fresh each time: reusing one env would let json.Unmarshal merge
+	// into the already-populated map and hide a job the handler dropped.
+	type refreshEnv struct {
+		Data map[string]map[string]bool `json:"data"`
+	}
+	decode := func(t *testing.T, rr *httptest.ResponseRecorder) refreshEnv {
+		t.Helper()
+		var env refreshEnv
+		if err := json.Unmarshal(rr.Body.Bytes(), &env); err != nil {
+			t.Fatalf("decode %q: %v", rr.Body.String(), err)
+		}
+		return env
+	}
+
+	env := decode(t, rr)
+	if !env.Data["library"]["triggered"] {
+		t.Fatalf("library not triggered: %+v", env.Data)
+	}
+	if _, ok := env.Data["watch"]; ok {
+		t.Fatalf("watch should not appear for job=library: %+v", env.Data)
+	}
 	if len(ft.got) != 1 || ft.got[0] != "library" {
 		t.Fatalf("trigger not called: %v", ft.got)
+	}
+
+	rr = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/api/refresh?job=all", nil))
+	env = decode(t, rr)
+	if !env.Data["library"]["triggered"] || !env.Data["watch"]["triggered"] {
+		t.Fatalf("job=all should trigger both: %+v", env.Data)
+	}
+	if len(env.Data) != 2 {
+		t.Fatalf("job=all should name exactly library+watch: %+v", env.Data)
 	}
 
 	rr = httptest.NewRecorder()

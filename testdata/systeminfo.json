@@ -1,0 +1,16 @@
+{
+  "OperatingSystemDisplayName": "",
+  "HasPendingRestart": false,
+  "IsShuttingDown": false,
+  "SupportsLibraryMonitor": true,
+  "HasUpdateAvailable": false,
+  "EncoderLocation": "System",
+  "SystemArchitecture": "X64",
+  "LocalAddress": "http://jellyfin.example.lan:8096",
+  "ServerName": "jellyfin.example.lan",
+  "Version": "10.11.11",
+  "ProductName": "Jellyfin Server",
+  "OperatingSystem": "",
+  "Id": "99999999888888887777777766666666",
+  "StartupWizardCompleted": true
+}

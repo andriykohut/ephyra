@@ -73,6 +73,15 @@ function growthOption(g: { month: string; added_items: number; cum_items: number
   };
 }
 
+export function growthForChart<T extends { month: string }>(g: T[]): T[] {
+  // Items with a broken (unix-epoch) DateCreated land in a bucket around 1970.
+  // That's real source data — kept in the API and in every count — but plotting
+  // it wrecks the axis, and rendering is where that belongs. A floor rather than
+  // an exact "1970-01": buckets are computed in the server's TZ, so west of UTC
+  // the epoch falls into "1969-12".
+  return g.filter((p) => p.month >= "1990-01");
+}
+
 const gbRows = (d: DiskBucket[]) =>
   d.map((x) => ({ name: x.bucket, value: Math.round(x.bytes / GB) }));
 const nRows = (d: LabeledCount[]) => d.map((x) => ({ name: x.label, value: x.count }));
@@ -201,7 +210,7 @@ export function LibraryOverview() {
               <EChart
                 height={280}
                 ariaLabel="Items added over time"
-                option={growthOption(data.growth)}
+                option={growthOption(growthForChart(data.growth))}
               />
             </ChartPanel>
           </div>

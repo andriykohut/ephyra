@@ -71,6 +71,12 @@ func Load(getenv func(string) string) (Config, error) {
 	dur("REFRESH_LIBRARY", &c.RefreshLibrary)
 	dur("REFRESH_WATCH", &c.RefreshWatch)
 	dur("LIVE_POLL_INTERVAL", &c.LivePollInterval)
+	// A zero or negative interval turns the poll loop into a hot loop against
+	// Jellyfin, which is the one thing this design exists to avoid. Anything
+	// under a second is a misconfiguration, not a preference.
+	if c.LivePollInterval < time.Second {
+		c.LivePollInterval = time.Second
+	}
 
 	if v := getenv("DIRECT_READ"); v != "" {
 		c.DirectRead = v == "1" || strings.EqualFold(v, "true")
