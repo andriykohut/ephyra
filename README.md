@@ -10,9 +10,9 @@ Runs beside Jellyfin in Docker Compose and puts next to no load on the server.
 
 Named after the juvenile stage of a jellyfin— sorry, jellyfish.
 
-> **Pre-alpha.** Very much so. All four pages work now, only one real Jellyfin
-> (10.11.11) has been tested against, nothing is tagged, and anything here can
-> change without notice. Run it if you're curious, not if you're relying on it.
+> **Pre-alpha.** Very much so. All four pages work now, but only one real
+> Jellyfin (10.11.11) has been tested against and anything here can change
+> without notice. Run it if you're curious, not if you're relying on it.
 
 **This build ships all four pages: Library, Watch Stats, Cleanup, and Now
 Playing.** Watch Stats needs the Playback Reporting plugin and shows an "enable
