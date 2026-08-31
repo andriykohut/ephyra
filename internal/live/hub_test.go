@@ -168,6 +168,48 @@ func TestHub_DegradedThenRecovery(t *testing.T) {
 	}
 }
 
+// TestHub_PublishedSnapshotImmutable is the regression guard for the fix: once a
+// *Snapshot has been handed to Publish, a later failed poll must not rewrite it.
+func TestHub_PublishedSnapshotImmutable(t *testing.T) {
+	fail := false
+	fc := &fakeClient{sessions: func() ([]jellyfin.RawSession, error) {
+		if fail {
+			return nil, errors.New("upstream down")
+		}
+		return oneSession("a", 100, false), nil
+	}}
+	h, tick := newHub(t, fc)
+	_, ch, unsub := h.Subscribe()
+	defer unsub()
+
+	// first poll succeeds -> "update" carrying a *Snapshot
+	waitCalls(t, fc, 1)
+	k, d, _ := readEvent(t, ch, time.Second)
+	if k != "update" {
+		t.Fatalf("want update, got %q", k)
+	}
+	published, ok := d.(*Snapshot)
+	if !ok {
+		t.Fatalf("update payload is %T, want *Snapshot", d)
+	}
+	if published.Degraded {
+		t.Fatal("fresh update snapshot should not be degraded")
+	}
+
+	// next poll fails -> hub goes degraded and swaps h.snap
+	fc.set(func() { fail = true })
+	tick <- time.Now()
+	waitCalls(t, fc, 2)
+	if k, _, _ := readEvent(t, ch, time.Second); k != "degraded" {
+		t.Fatalf("want degraded, got %q", k)
+	}
+
+	// the already-delivered update payload must be untouched
+	if published.Degraded {
+		t.Fatal("a failed poll retroactively mutated an already-published snapshot")
+	}
+}
+
 func TestHub_SlowSubscriberDropped(t *testing.T) {
 	fc := &fakeClient{sessions: func() ([]jellyfin.RawSession, error) { return oneSession("a", 100, false), nil }}
 	h, _ := newHub(t, fc)

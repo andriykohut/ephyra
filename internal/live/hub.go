@@ -225,10 +225,17 @@ func (h *Hub) pollOnce() error {
 	if err != nil {
 		h.mu.Lock()
 		already := h.snap != nil && h.snap.Degraded
-		if h.snap == nil {
-			h.snap = &Snapshot{Server: server, Sessions: []Session{}, Summary: Summary{Capacity: h.capacity}}
+		// A published/stored *Snapshot is never mutated in place — an SSE
+		// subscriber may still be marshalling it. Swap in a fresh value with
+		// Degraded set instead.
+		var degraded Snapshot
+		if h.snap != nil {
+			degraded = *h.snap
+		} else {
+			degraded = Snapshot{Server: server, Sessions: []Session{}, Summary: Summary{Capacity: h.capacity}}
 		}
-		h.snap.Degraded = true
+		degraded.Degraded = true
+		h.snap = &degraded
 		h.mu.Unlock()
 		if !already {
 			h.Publish(Event{Kind: "degraded", Data: degradedPayload{Degraded: true}})
