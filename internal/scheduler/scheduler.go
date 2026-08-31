@@ -174,6 +174,9 @@ func (s *Scheduler) RunWatchOnce(ctx context.Context) error {
 	if err := s.st.WriteWatchAggregates(ctx, agg.Daily, agg.Heatmap); err != nil {
 		return s.recordFailure(ctx, "watch", mt, start, err)
 	}
+	if err := s.st.WriteProfileAggregates(ctx, aggregate.Profiles(history, time.Now())); err != nil {
+		return s.recordFailure(ctx, "watch", mt, start, err)
+	}
 	s.log.Info("watch refresh ok", "events_seen", len(events), "history", len(history),
 		"daily_rows", len(agg.Daily), "dur_ms", time.Since(start).Milliseconds())
 	return s.st.SetRefreshMeta(ctx, store.RefreshMeta{
