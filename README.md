@@ -45,18 +45,29 @@ services:
       - /path/to/jellyfin/config:/jellyfin-data:ro
       - ephyra-data:/data
     ports:
-      - "8080:8080"
+      - "8097:8097"
     restart: unless-stopped
 volumes:
   ephyra-data:
 ```
 
-`docker compose up -d`, then open `http://<host>:8080`. The first refresh runs on
+`docker compose up -d`, then open `http://<host>:8097`. The first refresh runs on
 startup; the Library page fills in a second or two later.
 
 The container runs as UID 65532. A fresh named volume for `/data` picks that up
 automatically; if you bind-mount a host directory there instead, `chown 65532
 <dir>` first.
+
+That same UID has to read the Jellyfin mount. If Jellyfin writes its DBs as some
+other user without world `r-x` — linuxserver images run as whatever `PUID`/`PGID`
+you set — the copy step fails with `stat ... permission denied`. Find the owning
+GID (`stat -c '%g' <jellyfin-config>/data/data/jellyfin.db`) and add it to the
+container rather than loosening perms on Jellyfin's files:
+
+```yaml
+    group_add:
+      - "1000"   # whatever owns jellyfin.db — check, don't assume
+```
 
 No auth. Put it on your LAN, or behind whatever your reverse proxy already does
 for login.
@@ -71,7 +82,7 @@ for login.
 | `SOURCE` | no | `auto` | `file` \| `api` \| `auto`. `api` is not implemented yet |
 | `STORE_PATH` | no | `/data/ephyra.db` | Ephyra's own database |
 | `WORK_DIR` | no | `/data/work` | scratch space for DB copies; must be writable |
-| `LISTEN_ADDR` | no | `:8080` | |
+| `LISTEN_ADDR` | no | `:8097` | |
 | `REFRESH_LIBRARY` | no | `30m` | how often to re-read the library |
 | `REFRESH_WATCH` | no | `10m` | how often to re-read the Playback Reporting DB |
 | `LIVE_POLL_INTERVAL` | no | `4s` | how often Now Playing polls Jellyfin while the page is open |
@@ -147,7 +158,7 @@ JELLYFIN_URL=x JELLYFIN_API_KEY=x JELLYFIN_DATA_DIR=~/ephyra-test/jf \
   go run ./cmd/ephyra
 ```
 
-Open `http://localhost:8080`. The totals, genre band, decade spread, disk-by-codec
+Open `http://localhost:8097`. The totals, genre band, decade spread, disk-by-codec
 and library growth should match what you know your library actually holds. If a
 number is wrong, the query that produced it is in `internal/source/file/queries.go`
 and the rollup is in `internal/aggregate/library.go`.
@@ -157,8 +168,8 @@ and the rollup is in `internal/aggregate/library.go`.
 Two processes:
 
 ```sh
-cd web && npm run dev      # :5173, proxies /api and /healthz to :8080
-go run ./cmd/ephyra        # :8080
+cd web && npm run dev      # :5173, proxies /api and /healthz to :8097
+go run ./cmd/ephyra        # :8097
 ```
 
 Point `JELLYFIN_DATA_DIR` at a directory with a `data/jellyfin.db`. There's a
