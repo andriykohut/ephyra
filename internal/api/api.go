@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/andriykohut/ephyra/internal/config"
+	"github.com/andriykohut/ephyra/internal/live"
 	"github.com/andriykohut/ephyra/internal/store"
 )
 
@@ -20,8 +21,9 @@ type Deps struct {
 	Cfg     config.Config
 	Log     *slog.Logger
 	Trigger Triggerer
-	Static  http.Handler   // SPA handler from Task 10; nil in tests
+	Static  http.Handler     // SPA handler from Task 10; nil in tests
 	Now     func() time.Time // injectable clock; defaults to time.Now
+	Live    *live.Hub
 }
 
 type Server struct {
@@ -31,6 +33,7 @@ type Server struct {
 	trigger Triggerer
 	static  http.Handler
 	now     func() time.Time
+	live    *live.Hub
 }
 
 func New(d Deps) *Server {
@@ -38,7 +41,7 @@ func New(d Deps) *Server {
 	if now == nil {
 		now = time.Now
 	}
-	return &Server{st: d.Store, cfg: d.Cfg, log: d.Log, trigger: d.Trigger, static: d.Static, now: now}
+	return &Server{st: d.Store, cfg: d.Cfg, log: d.Log, trigger: d.Trigger, static: d.Static, now: now, live: d.Live}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -48,6 +51,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/watch/stats", s.handleWatchStats)
 	mux.HandleFunc("GET /api/cleanup", s.handleCleanup)
 	mux.HandleFunc("POST /api/refresh", s.handleRefresh)
+	mux.HandleFunc("GET /api/now-playing", s.handleNowPlaying)
 	mux.HandleFunc("/", s.handleRoot)
 	return withLogging(s.log, mux)
 }
@@ -113,3 +117,5 @@ func (s *statusWriter) Flush() {
 		f.Flush()
 	}
 }
+
+func (s *statusWriter) Unwrap() http.ResponseWriter { return s.ResponseWriter }

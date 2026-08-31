@@ -15,6 +15,8 @@ import (
 	"github.com/andriykohut/ephyra/internal/api"
 	"github.com/andriykohut/ephyra/internal/buildinfo"
 	"github.com/andriykohut/ephyra/internal/config"
+	"github.com/andriykohut/ephyra/internal/jellyfin"
+	"github.com/andriykohut/ephyra/internal/live"
 	"github.com/andriykohut/ephyra/internal/scheduler"
 	"github.com/andriykohut/ephyra/internal/source"
 	"github.com/andriykohut/ephyra/internal/source/file"
@@ -63,6 +65,15 @@ func run() error {
 	sched := scheduler.New(st, src, cfg, log)
 	go sched.Run(ctx)
 
+	jc := jellyfin.New(cfg)
+	var capacity *int
+	if cfg.StreamCapacity > 0 {
+		capacity = &cfg.StreamCapacity
+	}
+	hub := live.New(jc, cfg.LivePollInterval, capacity, log)
+	defer hub.Close()
+	hub.Prime(ctx)
+
 	dist, err := web.DistFS()
 	if err != nil {
 		return err
@@ -73,6 +84,7 @@ func run() error {
 		Log:     log,
 		Trigger: sched,
 		Static:  api.NewStaticHandler(dist),
+		Live:    hub,
 	})
 	httpServer := &http.Server{Addr: cfg.ListenAddr, Handler: srv.Handler()}
 
