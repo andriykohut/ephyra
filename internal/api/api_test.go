@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/andriykohut/ephyra/internal/aggregate"
 	"github.com/andriykohut/ephyra/internal/config"
 	"github.com/andriykohut/ephyra/internal/store"
 )
@@ -42,6 +43,28 @@ func TestHealthz(t *testing.T) {
 	s.Handler().ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/healthz", nil))
 	if rr.Code != 200 {
 		t.Fatalf("status %d", rr.Code)
+	}
+}
+
+func TestSPAServesHEAD(t *testing.T) {
+	// Uptime monitors and reverse-proxy health checks often probe with HEAD.
+	s, _, _ := newTestServer(t, time.Now())
+	s.static = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("<!doctype html>"))
+	})
+	for _, path := range []string{"/", "/library"} {
+		rr := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rr, httptest.NewRequest(http.MethodHead, path, nil))
+		if rr.Code != http.StatusOK {
+			t.Errorf("HEAD %s: got %d, want 200", path, rr.Code)
+		}
+	}
+	// HEAD on an unknown /api path still 404s like GET does.
+	rr := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rr, httptest.NewRequest(http.MethodHead, "/api/nope", nil))
+	if rr.Code != http.StatusNotFound {
+		t.Errorf("HEAD /api/nope: got %d, want 404", rr.Code)
 	}
 }
 
@@ -99,6 +122,44 @@ func TestLibraryOverview_OKAndStaleFlag(t *testing.T) {
 	json.Unmarshal(rr.Body.Bytes(), &env)
 	if !env.Meta.Stale {
 		t.Fatal("expected stale=true")
+	}
+}
+
+func TestLibraryOverview_EmptyListsSerializeAsArrays(t *testing.T) {
+	now := time.Now()
+	s, st, _ := newTestServer(t, now)
+	ctx := context.Background()
+	if err := st.WriteLibraryAggregates(ctx,
+		aggregate.LibraryAggregates{Totals: map[string]float64{}}, nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	st.SetRefreshMeta(ctx, store.RefreshMeta{Job: "library", LastRunAt: now, OK: true})
+
+	rr := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/library/overview", nil))
+	if rr.Code != 200 {
+		t.Fatalf("status %d body %s", rr.Code, rr.Body)
+	}
+	var raw struct {
+		Data map[string]json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &raw); err != nil {
+		t.Fatal(err)
+	}
+	var totals struct {
+		ItemsByLibrary json.RawMessage `json:"items_by_library"`
+	}
+	json.Unmarshal(raw.Data["totals"], &totals)
+	if string(totals.ItemsByLibrary) == "null" {
+		t.Error("data.totals.items_by_library serialized as null; want []")
+	}
+	for _, k := range []string{
+		"disk_by_resolution", "disk_by_codec", "disk_by_container", "disk_by_library",
+		"genres_top", "by_decade", "growth",
+	} {
+		if string(raw.Data[k]) == "null" {
+			t.Errorf("data.%s serialized as null; want []", k)
+		}
 	}
 }
 

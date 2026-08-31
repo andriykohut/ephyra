@@ -96,6 +96,21 @@ test("plugin-absent shows install card but keeps users + core", async () => {
   expect(screen.getByText("Fav Movie")).toBeInTheDocument();
 });
 
+test("null list fields render as empty instead of crashing", async () => {
+  // A stale response (or an older server) can send null where a list is
+  // expected. The page must still paint.
+  mock({
+    ...base,
+    top_movies: null,
+    top_series: null,
+    top_episodes: null,
+    active_users: null,
+  } as unknown as WS);
+  render(wrap(<WatchStatsView range="30d" user="all" onRange={noop} onUser={noop} />));
+  expect(await screen.findByText("watch time")).toBeInTheDocument();
+  expect(screen.getByText("Fav Movie")).toBeInTheDocument();
+});
+
 test("empty range shows coverage-aware message", async () => {
   mock({
     ...base,

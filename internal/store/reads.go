@@ -8,6 +8,16 @@ import (
 	"github.com/andriykohut/ephyra/internal/aggregate"
 )
 
+// orEmpty swaps a nil slice for an empty one so it marshals as [] rather than
+// null. The SPA iterates these lists straight off the JSON response, and a null
+// throws mid-render.
+func orEmpty[T any](s []T) []T {
+	if s == nil {
+		return []T{}
+	}
+	return s
+}
+
 // LibraryOverview is the shape GET /api/library/overview returns (under "data").
 type LibraryOverview struct {
 	Totals struct {
@@ -91,7 +101,19 @@ func (s *Store) ReadLibraryOverview(ctx context.Context) (LibraryOverview, error
 		}
 		ov.Growth = append(ov.Growth, g)
 	}
-	return ov, gr.Err()
+	if err := gr.Err(); err != nil {
+		return ov, err
+	}
+
+	ov.Totals.ItemsByLibrary = orEmpty(ov.Totals.ItemsByLibrary)
+	ov.DiskByResolution = orEmpty(ov.DiskByResolution)
+	ov.DiskByCodec = orEmpty(ov.DiskByCodec)
+	ov.DiskByContainer = orEmpty(ov.DiskByContainer)
+	ov.DiskByLibrary = orEmpty(ov.DiskByLibrary)
+	ov.GenresTop = orEmpty(ov.GenresTop)
+	ov.ByDecade = orEmpty(ov.ByDecade)
+	ov.Growth = orEmpty(ov.Growth)
+	return ov, nil
 }
 
 func (s *Store) readDisk(ctx context.Context, dim string) ([]aggregate.DiskBucket, error) {

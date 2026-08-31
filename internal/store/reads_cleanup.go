@@ -79,8 +79,12 @@ func (s *Store) ReadCleanup(ctx context.Context, p CleanupParams) (CleanupResult
 		it.LastPlayedAt = last
 		res.Items = append(res.Items, it)
 	}
+	if err := rows.Err(); err != nil {
+		return res, err
+	}
+	res.Items = orEmpty(res.Items)
 	res.Truncated = res.MatchCount > int64(len(res.Items))
-	return res, rows.Err()
+	return res, nil
 }
 
 // StreamCleanupCSV writes all matching rows (no limit) as CSV.
