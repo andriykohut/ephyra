@@ -36,3 +36,62 @@ type HeatmapRow struct {
 	DOW, Hour       int
 	WatchSec, Plays int64
 }
+
+// --- Profile rows (Plan 4). One agg_profile_* table each; full-rewritten per
+// watch run. Range is one of "30d" | "90d" | "1y" | "all"; a few panels are
+// lifetime-only and stored under "all".
+
+type ProfileSummaryRow struct {
+	UserID, Range              string
+	WatchSec, Plays            int64
+	DistinctTitles, DaysActive int64
+	FinishedPct, BailedPct     float64
+	RewatchPct                 float64 // only set on Range=="all"
+	LongestBingeEpisodes       int64   // lifetime
+	LongestBingeSeriesName     string  // lifetime
+	ShowOfRangeSeriesID        string
+	ShowOfRangeSeriesName      string
+	FirstPlay, LastPlay        string // YYYY-MM-DD
+}
+
+type ProfileCompletionRow struct {
+	UserID, Range, Scope, Bucket string // Scope: movie|episode ; Bucket: finished|partial|bailed|unknown
+	Count                        int64
+}
+
+type ProfileAbandonedRow struct {
+	UserID, Range, Scope, ItemID, Name, SeriesName string // Scope: movie|series
+	BailedCount                                    int64
+}
+
+type ProfileRewatchRow struct {
+	UserID, Scope, ItemID, Name, SeriesName string
+	WatchDays                               int64
+}
+
+type ProfileBingeRow struct {
+	UserID, SeriesID, SeriesName string
+	RunEpisodes                  int64
+	RunStart, RunEnd             string // YYYY-MM-DD
+}
+
+type ProfileTasteRow struct {
+	UserID, Range, Dim, Key string // Dim: genre|decade|length
+	WatchSec, Plays         int64
+}
+
+type TasteBaselineRow struct {
+	Dim, Key string
+	WatchSec int64
+}
+
+// ProfileAggregates is everything one Profiles() pass produces.
+type ProfileAggregates struct {
+	Summary    []ProfileSummaryRow
+	Completion []ProfileCompletionRow
+	Abandoned  []ProfileAbandonedRow
+	Rewatch    []ProfileRewatchRow
+	Binge      []ProfileBingeRow
+	Taste      []ProfileTasteRow
+	Baseline   []TasteBaselineRow
+}

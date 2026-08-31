@@ -243,3 +243,116 @@ func TestRunWatchOnce_PluginAbsent(t *testing.T) {
 		t.Fatalf("no rows expected, got %d", daily)
 	}
 }
+
+func TestRunWatchOnce_SpineAccumulatesAcrossRuns(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir()+"/s.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	fs := &fakeSource{events: []source.PlaybackEvent{
+		{At: time.Date(2025, 1, 6, 20, 0, 0, 0, time.UTC), UserID: "u1", ItemID: "m1", ItemType: "movie", Method: "DirectPlay", PlayDurationSec: 3600},
+	}}
+	mt1 := time.Unix(1000, 0)
+	fs.mtime.Store(&mt1)
+	sc := New(st, fs, config.Config{RefreshLibrary: time.Hour, RefreshWatch: time.Hour}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	if err := sc.RunWatchOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	// second run: a NEW event, and the source no longer reports the first one
+	fs.events = []source.PlaybackEvent{
+		{At: time.Date(2025, 1, 7, 21, 0, 0, 0, time.UTC), UserID: "u1", ItemID: "m2", ItemType: "movie", Method: "DirectPlay", PlayDurationSec: 1200},
+	}
+	mt2 := time.Unix(2000, 0)
+	fs.mtime.Store(&mt2)
+	if err := sc.RunWatchOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	var spine, daily int
+	st.DB().QueryRowContext(ctx, `SELECT count(*) FROM playback_events`).Scan(&spine)
+	st.DB().QueryRowContext(ctx, `SELECT count(*) FROM watch_events_daily`).Scan(&daily)
+	if spine != 2 || daily != 2 {
+		t.Fatalf("spine=%d daily=%d, want 2/2 (history is the union)", spine, daily)
+	}
+}
+
+func TestRunWatchOnce_EmptySpineBypassesMtimeSkip(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir()+"/s.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	// Simulate "already ran once pre-upgrade": a watch refresh_meta row with the
+	// current mtime, but an empty spine.
+	mt := time.Unix(1000, 0)
+	if err := st.SetRefreshMeta(ctx, store.RefreshMeta{
+		Job: "watch", LastRunAt: time.Now().UTC(), SourceMTime: mt, OK: true, PluginAvailable: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	fs := &fakeSource{events: []source.PlaybackEvent{
+		{At: time.Date(2025, 1, 6, 20, 0, 0, 0, time.UTC), UserID: "u1", ItemID: "m1", ItemType: "movie", Method: "DirectPlay", PlayDurationSec: 3600},
+	}}
+	fs.mtime.Store(&mt) // unchanged mtime -> would normally skip
+	sc := New(st, fs, config.Config{RefreshLibrary: time.Hour, RefreshWatch: time.Hour}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	if err := sc.RunWatchOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var spine int
+	st.DB().QueryRowContext(ctx, `SELECT count(*) FROM playback_events`).Scan(&spine)
+	if spine != 1 {
+		t.Fatalf("empty spine should have forced a backfill despite unchanged mtime, spine=%d", spine)
+	}
+}
+
+func TestRunWatchOnce_PopulatesProfileTables(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir()+"/s.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	fs := &fakeSource{events: []source.PlaybackEvent{
+		{At: time.Date(2025, 1, 6, 20, 0, 0, 0, time.UTC), UserID: "u1", ItemID: "m1", ItemType: "movie", Method: "DirectPlay", PlayDurationSec: 6000, ItemRuntimeSec: 6000, ItemYear: 1994, ItemGenres: []string{"Drama"}},
+	}}
+	mt := time.Unix(1000, 0)
+	fs.mtime.Store(&mt)
+	sc := New(st, fs, config.Config{RefreshLibrary: time.Hour, RefreshWatch: time.Hour}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	if err := sc.RunWatchOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var summ int
+	st.DB().QueryRowContext(ctx, `SELECT count(*) FROM agg_profile_summary WHERE user_id='u1'`).Scan(&summ)
+	if summ != 4 { // one row per range
+		t.Fatalf("agg_profile_summary rows for u1 = %d, want 4", summ)
+	}
+	// The library facts must survive the spine round-trip: a fully-watched movie
+	// with a known runtime lands in "finished", not "unknown".
+	var bucket string
+	st.DB().QueryRowContext(ctx, `SELECT bucket FROM agg_profile_completion WHERE user_id='u1' AND range='all' AND scope='movie'`).Scan(&bucket)
+	if bucket != "finished" {
+		t.Fatalf("completion bucket = %q, want finished (runtime lost through the spine?)", bucket)
+	}
+
+	// plugin goes away on the next run -> profile rows stay put
+	fs.pluginAbsent = true
+	mt2 := time.Unix(2000, 0)
+	fs.mtime.Store(&mt2)
+	if err := sc.RunWatchOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	st.DB().QueryRowContext(ctx, `SELECT count(*) FROM agg_profile_summary WHERE user_id='u1'`).Scan(&summ)
+	if summ != 4 {
+		t.Fatalf("profile rows should survive a plugin-absent run, got %d", summ)
+	}
+}

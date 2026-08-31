@@ -140,7 +140,8 @@ func (s *Scheduler) RunWatchOnce(ctx context.Context) error {
 		mt, _ = mtimer.SourceMTime("watch")
 	}
 	prev, hadPrev, _ := s.st.GetRefreshMeta(ctx, "watch")
-	if hadPrev && prev.OK && !prev.SourceMTime.IsZero() && !mt.IsZero() && mt.Equal(prev.SourceMTime) {
+	if hadPrev && prev.OK && !prev.SourceMTime.IsZero() && !mt.IsZero() &&
+		mt.Equal(prev.SourceMTime) && !s.spineEmpty(ctx) {
 		s.log.Info("watch refresh skipped (mtime unchanged)", "mtime", mt)
 		return s.st.SetRefreshMeta(ctx, store.RefreshMeta{
 			Job: "watch", LastRunAt: time.Now().UTC(), SourceMTime: mt,
@@ -161,14 +162,34 @@ func (s *Scheduler) RunWatchOnce(ctx context.Context) error {
 		return s.recordFailure(ctx, "watch", mt, start, err)
 	}
 
-	agg := aggregate.Watch(events)
+	if err := s.st.AppendPlaybackEvents(ctx, events); err != nil {
+		return s.recordFailure(ctx, "watch", mt, start, err)
+	}
+	history, err := s.st.ReadPlaybackEvents(ctx)
+	if err != nil {
+		return s.recordFailure(ctx, "watch", mt, start, err)
+	}
+
+	agg := aggregate.Watch(history)
 	if err := s.st.WriteWatchAggregates(ctx, agg.Daily, agg.Heatmap); err != nil {
 		return s.recordFailure(ctx, "watch", mt, start, err)
 	}
-	s.log.Info("watch refresh ok", "events", len(events), "daily_rows", len(agg.Daily),
-		"dur_ms", time.Since(start).Milliseconds())
+	if err := s.st.WriteProfileAggregates(ctx, aggregate.Profiles(history, time.Now())); err != nil {
+		return s.recordFailure(ctx, "watch", mt, start, err)
+	}
+	s.log.Info("watch refresh ok", "events_seen", len(events), "history", len(history),
+		"daily_rows", len(agg.Daily), "dur_ms", time.Since(start).Milliseconds())
 	return s.st.SetRefreshMeta(ctx, store.RefreshMeta{
 		Job: "watch", LastRunAt: time.Now().UTC(), SourceMTime: mt,
 		DurationMS: time.Since(start).Milliseconds(), OK: true, PluginAvailable: true,
 	})
+}
+
+// spineEmpty reports whether playback_events has no rows -- used to force a full
+// backfill on the first run after this feature ships, even when the plugin DB's
+// mtime hasn't moved.
+func (s *Scheduler) spineEmpty(ctx context.Context) bool {
+	var n int
+	err := s.st.DB().QueryRowContext(ctx, `SELECT count(*) FROM playback_events`).Scan(&n)
+	return err == nil && n == 0
 }

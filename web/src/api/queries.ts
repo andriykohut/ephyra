@@ -1,6 +1,13 @@
 import { queryOptions } from "@tanstack/react-query";
 import { fetchEnvelope } from "./client";
-import type { Cleanup, LibraryOverview, WatchRange, WatchStats } from "./types";
+import type {
+  Cleanup,
+  LibraryOverview,
+  Profile,
+  ProfileList,
+  WatchRange,
+  WatchStats,
+} from "./types";
 
 export const libraryOverviewQuery = () =>
   queryOptions({
@@ -20,5 +27,20 @@ export const watchStatsQuery = (range: WatchRange, user: string) =>
   queryOptions({
     queryKey: ["watch-stats", range, user],
     queryFn: () => fetchEnvelope<WatchStats>(`/api/watch/stats?range=${range}&user=${user}`),
+    staleTime: 10 * 60 * 1000,
+  });
+
+export const profileListQuery = () =>
+  queryOptions({
+    queryKey: ["profile-list"],
+    queryFn: () => fetchEnvelope<ProfileList>("/api/profile"),
+    staleTime: 10 * 60 * 1000,
+  });
+
+export const profileQuery = (userID: string, range: WatchRange) =>
+  queryOptions({
+    queryKey: ["profile", userID, range],
+    queryFn: () => fetchEnvelope<Profile>(`/api/profile/${userID}?range=${range}`),
+    enabled: userID !== "",
     staleTime: 10 * 60 * 1000,
   });

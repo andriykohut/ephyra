@@ -50,6 +50,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 	mux.HandleFunc("GET /api/library/overview", s.handleLibraryOverview)
 	mux.HandleFunc("GET /api/watch/stats", s.handleWatchStats)
+	mux.HandleFunc("GET /api/profile", s.handleProfileList)
+	mux.HandleFunc("GET /api/profile/{userID}", s.handleProfile)
 	mux.HandleFunc("GET /api/cleanup", s.handleCleanup)
 	mux.HandleFunc("POST /api/refresh", s.handleRefresh)
 	mux.HandleFunc("GET /api/now-playing", s.handleNowPlaying)
