@@ -111,3 +111,60 @@ export interface WatchStats {
     last_played_at: string;
   }[];
 }
+
+// --- Now Playing (Plan 3) --- mirrors internal/live JSON tags.
+
+export interface NowVideo {
+  codec: string;
+  width: number;
+  height: number;
+  range: string;
+  bitrate: number;
+}
+export interface NowAudio {
+  codec: string;
+  channels: number;
+  layout: string;
+  bitrate: number;
+}
+export interface NowTranscode {
+  bitrate: number;
+  container: string;
+  video: string;
+  audio: string;
+  hw: string;
+  completion_pct: number;
+  reasons: string[];
+}
+export interface NowSession {
+  session_id: string;
+  user: string;
+  type: string;
+  title: string;
+  series: string;
+  season_episode: string;
+  item_id: string;
+  art: { primary_tag: string; backdrop: { item_id: string; tag: string } | null };
+  play_method: string;
+  paused: boolean;
+  position_sec: number;
+  runtime_sec: number;
+  progress_pct: number;
+  is_remote: boolean;
+  client: string;
+  device: string;
+  source: { video: NowVideo; audio: NowAudio };
+  transcode: NowTranscode | null;
+}
+export interface NowSummary {
+  streams: number;
+  transcodes: number;
+  outbound_bitrate: number;
+  capacity: number | null;
+}
+export interface Snapshot {
+  server: { name: string; version: string };
+  degraded: boolean;
+  summary: NowSummary;
+  sessions: NowSession[];
+}
