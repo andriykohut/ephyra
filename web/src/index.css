@@ -66,11 +66,30 @@
   animation: ephyra-wipe 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
 
+/* Now Playing cards settle in when a session first appears */
+@keyframes ephyra-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.card-rise {
+  animation: ephyra-rise 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ambient::before {
     animation: none;
   }
   .seg-wipe {
+    animation: none;
+  }
+  .card-rise {
     animation: none;
   }
 }
