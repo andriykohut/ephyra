@@ -1,5 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { BarChart3, Layers, PlayCircle, Trash2 } from "lucide-react";
+import { BarChart3, Layers, PlayCircle, Trash2, UserRound } from "lucide-react";
 import type { ReactNode } from "react";
 import { Mark } from "@/components/Mark";
 import { cn } from "@/lib/utils";
@@ -18,6 +18,7 @@ function Wordmark({ markSize = 18, text = "text-[19px]" }: { markSize?: number; 
 const NAV = [
   { to: "/library", label: "Library", icon: Layers },
   { to: "/watch", label: "Watch Stats", icon: BarChart3 },
+  { to: "/profile", label: "Profiles", icon: UserRound },
   { to: "/now", label: "Now Playing", icon: PlayCircle },
   { to: "/cleanup", label: "Cleanup", icon: Trash2 },
 ] as const;

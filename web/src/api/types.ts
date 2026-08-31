@@ -168,3 +168,77 @@ export interface Snapshot {
   summary: NowSummary;
   sessions: NowSession[];
 }
+
+// --- Profiles (Plan 4) --- mirrors internal/store profile DTO JSON tags.
+
+export interface ProfileListEntry {
+  id: string;
+  name: string;
+  total_watch_sec: number;
+  total_plays: number;
+  finished_pct: number;
+  rewatch_pct: number;
+  longest_binge_episodes: number;
+  last_play: string;
+}
+export interface ProfileList {
+  plugin_available: boolean;
+  coverage: { first_play: string; last_play: string; total_plays: number };
+  users: ProfileListEntry[];
+}
+
+export interface TasteEntry {
+  key: string;
+  watch_sec: number;
+  plays: number;
+}
+export interface Profile {
+  range: WatchRange;
+  user: { id: string; name: string };
+  summary: {
+    watch_sec: number;
+    plays: number;
+    distinct_titles: number;
+    days_active: number;
+    finished_pct: number;
+    bailed_pct: number;
+    rewatch_pct: number;
+    longest_binge: { episodes: number; series_name: string };
+    show_of_range: { series_id: string; series_name: string };
+    first_play: string;
+    last_play: string;
+  };
+  completion: { scope: string; bucket: string; count: number }[];
+  abandoned: {
+    scope: string;
+    item_id: string;
+    name: string;
+    series_name: string;
+    bailed_count: number;
+  }[];
+  rewatch: {
+    scope: string;
+    item_id: string;
+    name: string;
+    series_name: string;
+    watch_days: number;
+  }[];
+  binge: {
+    series_id: string;
+    series_name: string;
+    run_episodes: number;
+    run_start: string;
+    run_end: string;
+  }[];
+  taste: {
+    genre: TasteEntry[];
+    decade: TasteEntry[];
+    length: TasteEntry[];
+    signature_genres: string[];
+  };
+  baseline: {
+    genre: { key: string; watch_sec: number }[];
+    decade: { key: string; watch_sec: number }[];
+    length: { key: string; watch_sec: number }[];
+  };
+}
