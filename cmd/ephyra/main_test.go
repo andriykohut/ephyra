@@ -66,6 +66,8 @@ func TestSmoke_WithPlugin(t *testing.T) {
 		"/api/watch/stats",
 		"/api/watch/stats?range=all",
 		"/api/watch/stats?range=all&user=11111111222233334444555555555555",
+		"/api/profile",
+		"/api/profile/11111111222233334444555555555555?range=all",
 		"/api/cleanup",
 		"/api/cleanup?mode=stale",
 	} {
