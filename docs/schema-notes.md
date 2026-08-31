@@ -127,8 +127,10 @@ unmarshals only the fields listed here; `encoding/json` drops the rest.
 ### `GET /Sessions`
 
 Returns every active session, idle ones included (app open, nothing playing).
-Ephyra keeps a session only when `NowPlayingItem != null` **and**
-`NowPlayingItem.MediaType == "Video"` — audio sessions and idle apps fall out.
+Ephyra keeps a session only when `NowPlayingItem != null`, `PlayState != null`,
+**and** `NowPlayingItem.MediaType == "Video"` — audio sessions and idle apps fall
+out. (A playing item always carries a `PlayState`; the check is there so the
+normalizer can dereference it without a guard.)
 
 Per-session fields Ephyra reads:
 
@@ -167,12 +169,13 @@ buffered), `HardwareAccelerationType` (`""` / `"none"` when software). The
 `hevc→h264` / `mkv→ts` strings in the DTO come from diffing these against the
 source streams.
 
-**The transcode fixture is synthetic.** `testdata/sessions.transcode.json` is
-hand-built to this shape — no live transcode was ever captured. The other two,
-`testdata/sessions.directplay.json` and `testdata/systeminfo.json`, carry the
-real 10.11 payload shape but every identity in them (users, titles, series,
-server name, IPs) is invented. Treat all three as stand-ins, same as the
-`*.fixture.sql` files.
+**All three JSON fixtures are hand-built stand-ins.**
+`testdata/sessions.directplay.json`, `testdata/sessions.transcode.json`, and
+`testdata/systeminfo.json` mirror the real 10.11 payload shape — field names,
+types, tick magnitudes, the lot — but nothing in them came from a real server.
+Every user, title, series, server name, path, and IP is invented, and no live
+transcode was ever captured. Same status as the `*.fixture.sql` files: right
+shape, made-up contents.
 
 ### `GET /System/Info`
 

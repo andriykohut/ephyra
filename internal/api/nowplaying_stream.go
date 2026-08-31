@@ -22,12 +22,13 @@ func (s *Server) handleNowPlayingStream(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("X-Accel-Buffering", "no")
 
 	rc := http.NewResponseController(w)
-	_ = rc.SetWriteDeadline(time.Time{}) // ignore if unsupported
 
 	_, ch, unsub := s.live.Subscribe()
 	defer unsub()
 
-	writeSSE(w, rc, "snapshot", s.live.Snapshot(r.Context()))
+	if writeSSE(w, rc, "snapshot", s.live.Snapshot(r.Context())) != nil {
+		return
+	}
 
 	hb := time.NewTicker(15 * time.Second)
 	defer hb.Stop()
@@ -39,21 +40,40 @@ func (s *Server) handleNowPlayingStream(w http.ResponseWriter, r *http.Request) 
 			if !ok {
 				return
 			}
-			writeSSE(w, rc, ev.Kind, ev.Data)
+			if writeSSE(w, rc, ev.Kind, ev.Data) != nil {
+				return
+			}
 		case <-hb.C:
-			_, _ = io.WriteString(w, ": heartbeat\n\n")
+			_ = rc.SetWriteDeadline(time.Now().Add(writeFrameTimeout))
+			if _, err := io.WriteString(w, ": heartbeat\n\n"); err != nil {
+				return
+			}
 			_ = rc.Flush()
 		}
 	}
 }
 
+// writeFrameTimeout bounds one frame write. A client that finishes the handshake
+// and then stops reading fills the TCP window and Write blocks forever — outside
+// the select, so r.Context().Done() can't help. The handler would never return,
+// defer unsub() would never run, and the poll loop would keep hitting Jellyfin
+// for nobody. A dead client also sends no RST, so this deadline is the only way
+// out.
+const writeFrameTimeout = 10 * time.Second
+
 // writeSSE marshals data and writes one "event: <name>" frame, then flushes so
-// the client sees it now rather than whenever the buffer happens to fill.
-func writeSSE(w io.Writer, rc *http.ResponseController, event string, data any) {
+// the client sees it now rather than whenever the buffer happens to fill. A
+// non-nil return means the connection is done and the caller should give up on
+// it; a frame that won't marshal is not the client's fault and is skipped.
+func writeSSE(w io.Writer, rc *http.ResponseController, event string, data any) error {
 	b, err := json.Marshal(data)
 	if err != nil {
-		return
+		return nil
 	}
-	_, _ = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, b)
+	_ = rc.SetWriteDeadline(time.Now().Add(writeFrameTimeout))
+	if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, b); err != nil {
+		return err
+	}
 	_ = rc.Flush()
+	return nil
 }

@@ -149,7 +149,10 @@ func TestSmoke_NowPlaying(t *testing.T) {
 
 	dataDir := testsupport.TwoDBLayout(t)
 	ctx := context.Background()
-	st, _ := store.Open(ctx, filepath.Join(t.TempDir(), "e.db"))
+	st, err := store.Open(ctx, filepath.Join(t.TempDir(), "e.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(func() { st.Close() })
 	cfg := config.Config{JellyfinDataDir: dataDir, WorkDir: t.TempDir(), JellyfinURL: jf.URL, JellyfinAPIKey: "K", LivePollInterval: time.Second, RefreshLibrary: time.Hour, RefreshWatch: time.Hour}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -174,7 +177,12 @@ func TestSmoke_NowPlaying(t *testing.T) {
 	// the stream yields a snapshot frame
 	srv := httptest.NewServer(h)
 	defer srv.Close()
-	resp, err := http.Get(srv.URL + "/api/now-playing/stream")
+	// a deadline so an unflushed frame fails here instead of hanging to the
+	// package timeout
+	streamCtx, cancelStream := context.WithTimeout(ctx, 10*time.Second)
+	defer cancelStream()
+	req, _ := http.NewRequestWithContext(streamCtx, http.MethodGet, srv.URL+"/api/now-playing/stream", nil)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}

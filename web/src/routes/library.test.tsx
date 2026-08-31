@@ -3,13 +3,11 @@ import { render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, expect, test, vi } from "vitest";
 import type { Envelope, LibraryOverview as LO } from "@/api/types";
-import { growthForChart } from "./library";
+import { growthForChart, LibraryOverview } from "./library";
 
 vi.mock("@/charts/EChart", () => ({
   EChart: () => <div data-testid="echart" />,
 }));
-
-const { LibraryOverview } = await import("./library");
 
 const sample: Envelope<LO> = {
   data: {
