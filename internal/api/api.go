@@ -52,6 +52,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/cleanup", s.handleCleanup)
 	mux.HandleFunc("POST /api/refresh", s.handleRefresh)
 	mux.HandleFunc("GET /api/now-playing", s.handleNowPlaying)
+	mux.HandleFunc("GET /api/now-playing/stream", s.handleNowPlayingStream)
 	mux.HandleFunc("/", s.handleRoot)
 	return withLogging(s.log, mux)
 }

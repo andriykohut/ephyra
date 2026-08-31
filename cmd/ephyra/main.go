@@ -102,6 +102,12 @@ func run() error {
 	case err := <-errCh:
 		return err
 	}
+	// Close the hub before Shutdown, not just via the deferred Close above:
+	// that defer runs only after Shutdown returns, and every open SSE stream
+	// would otherwise pin Shutdown for its full 5s timeout. Close drops the
+	// subscriber channels so each stream handler returns and its connection
+	// drains right away. Close is idempotent, so the defer is still a safe net.
+	hub.Close()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	return httpServer.Shutdown(shutdownCtx)

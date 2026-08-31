@@ -1,12 +1,14 @@
 package api
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -88,5 +90,56 @@ func TestNowPlaying_DegradedNoCache(t *testing.T) {
 	json.Unmarshal(rr.Body.Bytes(), &env)
 	if !env.Data.Degraded || len(env.Data.Sessions) != 0 {
 		t.Fatalf("expected degraded empty snapshot: %+v", env.Data)
+	}
+}
+
+func TestNowPlaying_Stream(t *testing.T) {
+	sc := stubClient{sessions: func() ([]jellyfin.RawSession, error) { return oneRawSession(), nil }}
+	s, hub := nowServer(t, sc)
+	srv := httptest.NewServer(s.Handler())
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/api/now-playing/stream", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if ct := resp.Header.Get("Content-Type"); ct != "text/event-stream" {
+		t.Fatalf("content-type %q", ct)
+	}
+
+	br := bufio.NewReader(resp.Body)
+	// first frame is "event: snapshot"
+	line, _ := br.ReadString('\n')
+	if !strings.HasPrefix(line, "event: snapshot") {
+		t.Fatalf("first frame = %q", line)
+	}
+	// hub publishes an update -> reaches the reader
+	hub.Publish(live.Event{Kind: "update", Data: &live.Snapshot{Sessions: []live.Session{}}})
+	deadline := time.Now().Add(2 * time.Second)
+	var sawUpdate bool
+	for time.Now().Before(deadline) {
+		l, err := br.ReadString('\n')
+		if err != nil {
+			break
+		}
+		if strings.HasPrefix(l, "event: update") {
+			sawUpdate = true
+			break
+		}
+	}
+	if !sawUpdate {
+		t.Fatal("did not receive the update frame")
+	}
+
+	// disconnect -> hub subscriber count drops to 0
+	cancel()
+	for i := 0; i < 200 && hub.SubscriberCount() != 0; i++ {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if hub.SubscriberCount() != 0 {
+		t.Fatalf("subscriber not removed on disconnect")
 	}
 }
