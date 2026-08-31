@@ -10,22 +10,24 @@ Runs beside Jellyfin in Docker Compose and puts next to no load on the server.
 
 Named after the juvenile stage of a jellyfin— sorry, jellyfish.
 
-> **Pre-alpha.** Very much so. Three pages work, one is a stub, only one real
-> Jellyfin (10.11.11) has been tested against, nothing is tagged, and anything
-> here can change without notice. Run it if you're curious, not if you're
-> relying on it.
+> **Pre-alpha.** Very much so. All four pages work now, only one real Jellyfin
+> (10.11.11) has been tested against, nothing is tagged, and anything here can
+> change without notice. Run it if you're curious, not if you're relying on it.
 
-**This build ships Library, Watch Stats, and Cleanup.** Now Playing is a stub.
-Watch Stats needs the Playback Reporting plugin and shows an "enable this plugin"
-panel without it; the other pages work against core Jellyfin alone.
+**This build ships all four pages: Library, Watch Stats, Cleanup, and Now
+Playing.** Watch Stats needs the Playback Reporting plugin and shows an "enable
+this plugin" panel without it. Now Playing needs a working API key and degrades
+to a notice without one. Library and Cleanup work against core Jellyfin alone.
 
 ## What you need
 
 - Jellyfin 10.11, running on the same Docker host.
 - The ability to bind-mount Jellyfin's config directory into another container,
   read-only.
-- A Jellyfin API key (Dashboard → API Keys → +). Only used for the live bits
-  that aren't in this build yet; still required so the config is complete.
+- A Jellyfin API key: **Dashboard → API Keys → +**, name it `ephyra`. Put it in
+  `EPHYRA_JELLYFIN_API_KEY`. It powers Now Playing and the header's server
+  name/version; a wrong or missing key degrades Now Playing but doesn't stop
+  Ephyra.
 
 ## Run it
 
@@ -63,17 +65,17 @@ for login.
 | Variable | Required | Default | Notes |
 |---|---|---|---|
 | `JELLYFIN_URL` | yes | — | e.g. `http://jellyfin:8096` |
-| `JELLYFIN_API_KEY` | yes | — | not exercised in this build, still required |
+| `JELLYFIN_API_KEY` | yes | — | for Now Playing + the server-name header |
 | `JELLYFIN_DATA_DIR` | yes (unless `SOURCE=api`) | — | the read-only mount; DBs read from `<dir>/data/` or `<dir>/data/data/` |
 | `SOURCE` | no | `auto` | `file` \| `api` \| `auto`. `api` is not implemented yet |
 | `STORE_PATH` | no | `/data/ephyra.db` | Ephyra's own database |
 | `WORK_DIR` | no | `/data/work` | scratch space for DB copies; must be writable |
 | `LISTEN_ADDR` | no | `:8080` | |
 | `REFRESH_LIBRARY` | no | `30m` | how often to re-read the library |
-| `REFRESH_WATCH` | no | `10m` | unused in this build |
-| `LIVE_POLL_INTERVAL` | no | `4s` | unused in this build |
+| `REFRESH_WATCH` | no | `10m` | how often to re-read the Playback Reporting DB |
+| `LIVE_POLL_INTERVAL` | no | `4s` | how often Now Playing polls Jellyfin while the page is open |
 | `DIRECT_READ` | no | `false` | skip the copy, read the live DB with `immutable=1`. Only if your mount is read-write |
-| `STREAM_CAPACITY` | no | unset | unused in this build |
+| `STREAM_CAPACITY` | no | unset | max concurrent streams; shown on Now Playing as a capacity hint |
 | `LOG_LEVEL` | no | `info` | `debug` \| `info` \| `warn` \| `error`; JSON to stdout |
 | `TZ` | no | `UTC` | e.g. `Europe/Kyiv`; affects month bucketing on the growth chart |
 

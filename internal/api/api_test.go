@@ -121,8 +121,25 @@ func TestRefreshEndpoint(t *testing.T) {
 	if rr.Code != http.StatusAccepted {
 		t.Fatalf("want 202, got %d", rr.Code)
 	}
+	var env struct {
+		Data map[string]map[string]bool `json:"data"`
+	}
+	json.Unmarshal(rr.Body.Bytes(), &env)
+	if !env.Data["library"]["triggered"] {
+		t.Fatalf("library not triggered: %+v", env.Data)
+	}
+	if _, ok := env.Data["watch"]; ok {
+		t.Fatalf("watch should not appear for job=library: %+v", env.Data)
+	}
 	if len(ft.got) != 1 || ft.got[0] != "library" {
 		t.Fatalf("trigger not called: %v", ft.got)
+	}
+
+	rr = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/api/refresh?job=all", nil))
+	json.Unmarshal(rr.Body.Bytes(), &env)
+	if !env.Data["library"]["triggered"] || !env.Data["watch"]["triggered"] {
+		t.Fatalf("job=all should trigger both: %+v", env.Data)
 	}
 
 	rr = httptest.NewRecorder()

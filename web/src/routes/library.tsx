@@ -73,6 +73,14 @@ function growthOption(g: { month: string; added_items: number; cum_items: number
   };
 }
 
+// near the other helpers, exported for the unit test:
+export function growthForChart<T extends { month: string }>(g: T[]): T[] {
+  // The API returns items with a broken (unix-epoch) DateCreated in a "1970-01"
+  // bucket. That's real source data — kept in the API — but plotting it wrecks
+  // the axis. Rendering is where this belongs.
+  return g.filter((p) => p.month !== "1970-01");
+}
+
 const gbRows = (d: DiskBucket[]) =>
   d.map((x) => ({ name: x.bucket, value: Math.round(x.bytes / GB) }));
 const nRows = (d: LabeledCount[]) => d.map((x) => ({ name: x.label, value: x.count }));
@@ -201,7 +209,7 @@ export function LibraryOverview() {
               <EChart
                 height={280}
                 ariaLabel="Items added over time"
-                option={growthOption(data.growth)}
+                option={growthOption(growthForChart(data.growth))}
               />
             </ChartPanel>
           </div>
