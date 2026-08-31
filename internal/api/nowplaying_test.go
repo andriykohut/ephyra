@@ -2,13 +2,16 @@ package api
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -141,5 +144,57 @@ func TestNowPlaying_Stream(t *testing.T) {
 	}
 	if hub.SubscriberCount() != 0 {
 		t.Fatalf("subscriber not removed on disconnect")
+	}
+}
+
+func TestNowPlaying_ArtProxyAndCache(t *testing.T) {
+	png := []byte("\x89PNGdata")
+	var hits int32
+	sc := stubClient{
+		sessions: func() ([]jellyfin.RawSession, error) { return nil, nil },
+		img: func() (io.ReadCloser, string, error) {
+			atomic.AddInt32(&hits, 1)
+			return io.NopCloser(bytes.NewReader(png)), "image/png", nil
+		},
+	}
+	s, _ := nowServer(t, sc)
+
+	do := func(path string) *httptest.ResponseRecorder {
+		rr := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rr, httptest.NewRequest(http.MethodGet, path, nil))
+		return rr
+	}
+
+	rr := do("/api/now-playing/art/8a5cc46f628a63cd9981105b4d50ccb7?kind=primary&tag=t1")
+	if rr.Code != 200 || rr.Header().Get("Content-Type") != "image/png" || rr.Body.String() != string(png) {
+		t.Fatalf("art: %d %q", rr.Code, rr.Header().Get("Content-Type"))
+	}
+	if rr.Header().Get("Cache-Control") == "" {
+		t.Fatal("missing Cache-Control")
+	}
+	// identical request -> cache hit, no second upstream call
+	do("/api/now-playing/art/8a5cc46f628a63cd9981105b4d50ccb7?kind=primary&tag=t1")
+	if atomic.LoadInt32(&hits) != 1 {
+		t.Fatalf("expected 1 upstream hit, got %d", hits)
+	}
+
+	if do("/api/now-playing/art/..%2Fetc?kind=primary").Code != 400 {
+		t.Fatal("bad id should be 400")
+	}
+	if do("/api/now-playing/art/8a5cc46f628a63cd9981105b4d50ccb7?kind=logo").Code != 400 {
+		t.Fatal("bad kind should be 400")
+	}
+}
+
+func TestNowPlaying_ArtUpstreamError(t *testing.T) {
+	sc := stubClient{
+		sessions: func() ([]jellyfin.RawSession, error) { return nil, nil },
+		img:      func() (io.ReadCloser, string, error) { return nil, "", errors.New("upstream 404") },
+	}
+	s, _ := nowServer(t, sc)
+	rr := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/now-playing/art/8a5cc46f628a63cd9981105b4d50ccb7", nil))
+	if rr.Code != 502 {
+		t.Fatalf("want 502, got %d", rr.Code)
 	}
 }

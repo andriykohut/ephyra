@@ -34,6 +34,7 @@ type Server struct {
 	static  http.Handler
 	now     func() time.Time
 	live    *live.Hub
+	art     *artCache
 }
 
 func New(d Deps) *Server {
@@ -41,7 +42,7 @@ func New(d Deps) *Server {
 	if now == nil {
 		now = time.Now
 	}
-	return &Server{st: d.Store, cfg: d.Cfg, log: d.Log, trigger: d.Trigger, static: d.Static, now: now, live: d.Live}
+	return &Server{st: d.Store, cfg: d.Cfg, log: d.Log, trigger: d.Trigger, static: d.Static, now: now, live: d.Live, art: newArtCache(32)}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -53,6 +54,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/refresh", s.handleRefresh)
 	mux.HandleFunc("GET /api/now-playing", s.handleNowPlaying)
 	mux.HandleFunc("GET /api/now-playing/stream", s.handleNowPlayingStream)
+	mux.HandleFunc("GET /api/now-playing/art/{itemId}", s.handleNowPlayingArt)
 	mux.HandleFunc("/", s.handleRoot)
 	return withLogging(s.log, mux)
 }
