@@ -20,7 +20,7 @@ func TestLoadDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if c.StorePath != "/data/ephyra.db" || c.WorkDir != "/data/work" || c.ListenAddr != ":8080" {
+	if c.StorePath != "/data/ephyra.db" || c.WorkDir != "/data/work" || c.ListenAddr != ":8097" {
 		t.Fatalf("bad defaults: %+v", c)
 	}
 	if c.RefreshLibrary != 30*time.Minute || c.RefreshWatch != 10*time.Minute || c.LivePollInterval != 4*time.Second {

@@ -65,7 +65,7 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "no such endpoint")
 		return
 	}
-	if s.static != nil && r.Method == http.MethodGet {
+	if s.static != nil && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
 		s.static.ServeHTTP(w, r)
 		return
 	}

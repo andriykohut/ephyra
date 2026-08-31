@@ -55,6 +55,23 @@ func TestWatchStats_PluginAbsentStillHasUsersAndCore(t *testing.T) {
 	if len(env.Data.TopMovies) != 0 {
 		t.Fatalf("plugin panels should be empty: %+v", env.Data.TopMovies)
 	}
+
+	// Empty lists must serialize as [] not null — the SPA iterates them straight
+	// off the response and a null blows up the render.
+	var raw struct {
+		Data map[string]json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &raw); err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []string{
+		"users", "top_movies", "top_series", "top_episodes", "active_users",
+		"trend", "heatmap", "play_method_weekly", "most_played_core",
+	} {
+		if string(raw.Data[k]) == "null" {
+			t.Errorf("data.%s serialized as null; want []", k)
+		}
+	}
 }
 
 func TestWatchStats_BadRange(t *testing.T) {

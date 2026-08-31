@@ -346,7 +346,23 @@ func (s *Store) ReadWatchStats(ctx context.Context, p WatchStatsParams) (WatchSt
 		ws.Heatmap = append(ws.Heatmap, c)
 	}
 	hrows.Close()
-	return ws, hrows.Err()
+	if err := hrows.Err(); err != nil {
+		return ws, err
+	}
+
+	// The SPA iterates these straight off the JSON. A nil slice marshals to
+	// null, which throws mid-render, so hand back [] for anything that came up
+	// empty.
+	ws.Users = orEmpty(ws.Users)
+	ws.TopMovies = orEmpty(ws.TopMovies)
+	ws.TopSeries = orEmpty(ws.TopSeries)
+	ws.TopEpisodes = orEmpty(ws.TopEpisodes)
+	ws.ActiveUsers = orEmpty(ws.ActiveUsers)
+	ws.Trend = orEmpty(ws.Trend)
+	ws.Heatmap = orEmpty(ws.Heatmap)
+	ws.PlayMethodWeekly = orEmpty(ws.PlayMethodWeekly)
+	ws.MostPlayedCore = orEmpty(ws.MostPlayedCore)
+	return ws, nil
 }
 
 func (s *Store) readTop(ctx context.Context, dst *[]WatchTitle, q string, args []any, isSeries bool) error {

@@ -20,7 +20,7 @@ build: web
 run: build
 	./ephyra
 
-# two processes: `cd web && npm run dev` (5173, proxies /api) and `go run ./cmd/ephyra` (8080)
+# two processes: `cd web && npm run dev` (5173, proxies /api) and `go run ./cmd/ephyra` (8097)
 dev:
 	@echo "terminal 1: cd web && npm run dev"
 	@echo "terminal 2: go run ./cmd/ephyra"

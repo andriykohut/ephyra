@@ -15,11 +15,14 @@ export function DataTable<Row>({
   empty,
 }: {
   columns: Column<Row>[];
-  rows: Row[];
+  // A stale or partial API response can send null where a list is expected;
+  // treat that the same as empty rather than throwing mid-render.
+  rows: Row[] | null | undefined;
   getKey: (r: Row) => string;
   empty?: ReactNode;
 }) {
-  if (rows.length === 0 && empty) {
+  const data = rows ?? [];
+  if (data.length === 0 && empty) {
     return <div className="px-4 py-8 text-center text-[13px] text-muted">{empty}</div>;
   }
   return (
@@ -41,7 +44,7 @@ export function DataTable<Row>({
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => (
+          {data.map((r) => (
             <tr key={getKey(r)} className="border-line/50 border-b last:border-0">
               {columns.map((c) => (
                 <td

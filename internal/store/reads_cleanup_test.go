@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -73,5 +74,33 @@ func TestReadCleanup_NeverAndStale(t *testing.T) {
 	lines := strings.Split(strings.TrimSpace(b.String()), "\n")
 	if len(lines) != 3 || !strings.HasPrefix(lines[0], "item_id,scope,name,library,bytes,episodes,added_at,last_played_at") {
 		t.Fatalf("csv:\n%s", b.String())
+	}
+}
+
+func TestReadCleanup_EmptyItemsSerializeAsArray(t *testing.T) {
+	ctx := context.Background()
+	s, err := Open(ctx, t.TempDir()+"/s.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	if err := s.WriteLibraryAggregates(ctx,
+		aggregate.LibraryAggregates{Totals: map[string]float64{}}, nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := s.ReadCleanup(ctx, CleanupParams{Mode: "never", Sort: "size", Limit: 10, Now: time.Now()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Items == nil {
+		t.Fatal("Items is nil; want an empty slice so it marshals as []")
+	}
+	b, err := json.Marshal(res)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), `"items":[]`) {
+		t.Fatalf("items not []: %s", b)
 	}
 }

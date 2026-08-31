@@ -30,8 +30,8 @@ Frontend (in `web/`):
 Dev — two processes:
 
 ```sh
-cd web && npm run dev      # :5173, proxies /api and /healthz to :8080
-go run ./cmd/ephyra        # :8080  (needs a Jellyfin DB to read — see below)
+cd web && npm run dev      # :5173, proxies /api and /healthz to :8097
+go run ./cmd/ephyra        # :8097  (needs a Jellyfin DB to read — see below)
 ```
 
 Run against the checked-in fixture instead of a real Jellyfin:
@@ -78,7 +78,9 @@ API handlers read ONLY from store's agg_* tables, never from Jellyfin.
   errors are `{ "error": { "code", "message" } }`. **Staleness** = no
   `refresh_meta` row, or last run failed, or older than 2× the interval. Unknown
   `/api/*` paths return 404 JSON; every other GET falls through to the SPA
-  (`index.html`).
+  (`index.html`). List fields serialize as `[]`, never `null` — the SPA iterates
+  them straight off the response, so the `store` reads run every slice through
+  `orEmpty` before returning.
 - `internal/jellyfin` / `internal/live` — the Now Playing live path, off to the
   side of the pipeline above. `internal/jellyfin` is a thin read-only HTTP client
   (not a `Source`). `internal/live` holds the SSE hub whose poll loop runs

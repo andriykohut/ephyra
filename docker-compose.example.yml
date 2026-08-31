@@ -1,5 +1,5 @@
 # Copy to docker-compose.yml, fill in the Jellyfin config path, and the
-# API key, then `docker compose up -d`. Browse to http://<host>:8080.
+# API key, then `docker compose up -d`. Browse to http://<host>:8097.
 services:
   ephyra:
     image: ghcr.io/andriykohut/ephyra:latest
@@ -14,7 +14,7 @@ services:
       - /path/to/jellyfin/config:/jellyfin-data:ro
       - ephyra-data:/data
     ports:
-      - "8080:8080"
+      - "8097:8097"
     restart: unless-stopped
 volumes:
   ephyra-data:
