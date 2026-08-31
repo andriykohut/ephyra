@@ -72,6 +72,65 @@ container rather than loosening perms on Jellyfin's files:
 No auth. Put it on your LAN, or behind whatever your reverse proxy already does
 for login.
 
+## Run it without Docker
+
+Each release attaches a static binary per platform — `linux/amd64`, `linux/arm64`,
+`darwin/amd64`, `darwin/arm64`. Pure Go, no shared libraries, the frontend baked
+in. Grab the tarball for your box from the [releases
+page](https://github.com/andriykohut/ephyra/releases), check it, unpack it:
+
+```sh
+sha256sum -c --ignore-missing SHA256SUMS      # optional; SHA256SUMS is on the release too
+tar xzf ephyra_<version>_linux_amd64.tar.gz
+cd ephyra_<version>_linux_amd64
+```
+
+Same environment variables as the container (see Configuration), with two
+caveats: the `/data/...` defaults for `STORE_PATH` and `WORK_DIR` assume the
+container's layout, so set them to real writable paths; and `JELLYFIN_DATA_DIR`
+points straight at Jellyfin's config directory — the process has to be able to
+read `<that dir>/data/` (run it as the Jellyfin user, or one in that group).
+
+```sh
+JELLYFIN_URL=http://localhost:8096 \
+JELLYFIN_API_KEY=... \
+JELLYFIN_DATA_DIR=/var/lib/jellyfin \
+STORE_PATH=/var/lib/ephyra/ephyra.db \
+WORK_DIR=/var/lib/ephyra/work \
+./ephyra
+```
+
+It listens on `:8097` (`LISTEN_ADDR` to change) and logs JSON to stdout; the
+version is in the first `starting` line.
+
+As a systemd service:
+
+```ini
+# /etc/systemd/system/ephyra.service
+[Unit]
+Description=ephyra
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=jellyfin
+ExecStart=/usr/local/bin/ephyra
+Environment=JELLYFIN_URL=http://localhost:8096
+Environment=JELLYFIN_API_KEY=...
+Environment=JELLYFIN_DATA_DIR=/var/lib/jellyfin
+Environment=STORE_PATH=/var/lib/ephyra/ephyra.db
+Environment=WORK_DIR=/var/lib/ephyra/work
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+
+`install -Dm755 ephyra /usr/local/bin/ephyra`, `mkdir -p /var/lib/ephyra &&
+chown jellyfin /var/lib/ephyra`, then `systemctl enable --now ephyra`. To build
+the tarballs yourself instead of downloading them: `make dist` (writes the same
+set to `./dist/`).
+
 ## Configuration
 
 | Variable | Required | Default | Notes |

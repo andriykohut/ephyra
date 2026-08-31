@@ -20,6 +20,9 @@ Go (module `github.com/andriykohut/ephyra`, floor `go 1.25`):
   — `.golangci.yml` is v2 schema. If it isn't on `PATH`, it's usually at
   `~/go/bin/golangci-lint` (installed via `go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest`).
 - `make build` → builds `web/` then the binary (`./ephyra`). Frontend must build first.
+- `make dist [VERSION=vX.Y.Z]` → cross-compiled release tarballs into `./dist/`
+  for linux/darwin × amd64/arm64, plus `SHA256SUMS`. Same set `release.yml`
+  attaches to the GitHub release; `./dist` is gitignored.
 - Always `CGO_ENABLED=0` (pure-Go SQLite via `modernc.org/sqlite`).
 
 Frontend (in `web/`):
