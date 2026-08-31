@@ -73,7 +73,6 @@ function growthOption(g: { month: string; added_items: number; cum_items: number
   };
 }
 
-// near the other helpers, exported for the unit test:
 export function growthForChart<T extends { month: string }>(g: T[]): T[] {
   // The API returns items with a broken (unix-epoch) DateCreated in a "1970-01"
   // bucket. That's real source data — kept in the API — but plotting it wrecks
