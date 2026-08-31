@@ -18,8 +18,8 @@ func TestOpenAppliesMigrationsIdempotently(t *testing.T) {
 	if err := s1.DB().QueryRowContext(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
-	if n != 2 {
-		t.Fatalf("want 2 applied migrations, got %d", n)
+	if n != 3 {
+		t.Fatalf("want 3 applied migrations, got %d", n)
 	}
 	if err := s1.Close(); err != nil {
 		t.Fatal(err)
@@ -107,7 +107,46 @@ func TestMigration0002Redefinitions(t *testing.T) {
 	if err := s.DB().QueryRowContext(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
-	if n != 2 {
-		t.Fatalf("want 2 migrations applied, got %d", n)
+	if n != 3 {
+		t.Fatalf("want 3 migrations applied, got %d", n)
+	}
+}
+
+func TestMigrate_0003_ProfileTables(t *testing.T) {
+	st, err := Open(context.Background(), t.TempDir()+"/s.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	want := []string{
+		"playback_events", "agg_profile_summary", "agg_profile_completion",
+		"agg_profile_abandoned", "agg_profile_rewatch", "agg_profile_binge",
+		"agg_profile_taste", "agg_taste_baseline",
+	}
+	for _, name := range want {
+		var got string
+		err := st.DB().QueryRow(
+			`SELECT name FROM sqlite_master WHERE type='table' AND name=?`, name,
+		).Scan(&got)
+		if err != nil {
+			t.Fatalf("table %q missing: %v", name, err)
+		}
+	}
+
+	var v int
+	if err := st.DB().QueryRow(`SELECT MAX(version) FROM schema_migrations`).Scan(&v); err != nil {
+		t.Fatal(err)
+	}
+	if v != 3 {
+		t.Fatalf("schema_migrations max version = %d, want 3", v)
+	}
+
+	var idx int
+	st.DB().QueryRow(
+		`SELECT count(*) FROM sqlite_master WHERE type='index' AND tbl_name='playback_events' AND sql LIKE '%dedup_hash%'`,
+	).Scan(&idx)
+	if idx == 0 {
+		t.Fatal("expected a unique index on playback_events.dedup_hash")
 	}
 }
