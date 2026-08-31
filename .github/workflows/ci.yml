@@ -14,6 +14,11 @@ jobs:
         with:
           go-version: stable
       - run: CGO_ENABLED=0 go build ./...
+      # the release ships these targets; catch a GOOS-specific break before the tag
+      - run: |
+          for t in linux/arm64 darwin/amd64 darwin/arm64; do
+            GOOS="${t%/*}" GOARCH="${t#*/}" CGO_ENABLED=0 go build -o /dev/null ./cmd/ephyra
+          done
       - run: CGO_ENABLED=0 go test ./...
       - run: go vet ./...
       - uses: golangci/golangci-lint-action@v9
