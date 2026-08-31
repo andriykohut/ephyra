@@ -6,9 +6,10 @@ Ephyra is a stats dashboard for Jellyfin: one Go binary with a React SPA baked i
 It reads *copies* of Jellyfin's SQLite files on a schedule and serves rolled-up
 aggregates. It never writes to Jellyfin or to the mounted directory.
 
-**All three plans done; v1 four-page surface complete.** (Library Overview; Watch
-Stats & Cleanup; Now Playing.) The design specs and implementation plans live in
-`docs/superpowers/`.
+**Five pages live.** Library Overview; Watch Stats & Cleanup; Now Playing;
+Profiles (per-user completion / rewatch / binge / taste, backed by an
+append-only `playback_events` spine that outlives the plugin's retention). The
+design specs and implementation plans live in `docs/superpowers/`.
 
 ## Commands
 
@@ -73,7 +74,10 @@ API handlers read ONLY from store's agg_* tables, never from Jellyfin.
   (`migrations/*.sql`), forward-only, integer-versioned by filename prefix; the
   runner owns `schema_migrations`, so a migration must **not** `CREATE` it.
   `agg_*` tables are fully rewritten per refresh; the API always sees a complete
-  set. `refresh_meta` drives staleness.
+  set. `refresh_meta` drives staleness. The one exception is `playback_events`:
+  append-only, never rewritten — the watch job upserts new plugin rows into it
+  (idempotent on `dedup_hash`), reads the whole history back, and feeds *that*
+  to both `aggregate.Watch` and `aggregate.Profiles`.
 - `internal/scheduler` — one ticker per job + a manual-trigger channel, per-job
   mutex, mtime-skip. Runs each job once on startup.
 - `internal/api` — `net/http` `ServeMux` (method patterns). Every JSON response is

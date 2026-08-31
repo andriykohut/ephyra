@@ -10,15 +10,15 @@ Runs beside Jellyfin in Docker Compose and puts next to no load on the server.
 
 Named after the juvenile stage of a jellyfin— sorry, jellyfish.
 
-> **Pre-alpha.** Very much so. All four pages work now, but only one real
+> **Pre-alpha.** Very much so. All five pages work now, but only one real
 > Jellyfin (10.11.11) has been tested against and anything here can change
 > without notice. Run it if you're curious, not if you're relying on it.
 
-**This build ships all four pages: Library, Watch Stats, Cleanup, and Now
-Playing.** Watch Stats needs the Playback Reporting plugin and shows an "enable
-this plugin" panel without it. Now Playing needs a working API key; with a bad
-one it degrades to a notice. Library and Cleanup work against core Jellyfin
-alone, though the key is required for Ephyra to start at all.
+**This build ships five pages: Library, Watch Stats, Cleanup, Profiles, and Now
+Playing.** Watch Stats and Profiles need the Playback Reporting plugin and show
+an "enable this plugin" panel without it. Now Playing needs a working API key;
+with a bad one it degrades to a notice. Library and Cleanup work against core
+Jellyfin alone, though the key is required for Ephyra to start at all.
 
 ## What you need
 
@@ -157,6 +157,13 @@ without writing a `-shm` sidecar. So each refresh copies the item DB — `jellyf
 `-wal` / `-shm`) — into `WORK_DIR`, queries the copy, and deletes it. If the file's
 mtime hasn't changed since the last successful run, the refresh is skipped
 entirely — libraries don't change often, so most runs do no work.
+
+Ephyra keeps its own copy of playback history in a `playback_events` table so
+the Profiles page and Watch Stats survive the Playback Reporting plugin's
+retention window. One row per play — single-digit MB a year on a home server,
+tens of MB on a busy multi-user one. Nothing prunes it; that's deliberate. On
+the first refresh after upgrading, Ephyra backfills it from whatever the plugin
+currently retains.
 
 Ephyra never writes to Jellyfin or to the mounted directory.
 
