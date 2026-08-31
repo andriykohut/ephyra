@@ -13,8 +13,8 @@ import (
 const (
 	completionFinished = 0.90 // watched/runtime at or above this -> "finished"
 	completionBailed   = 0.25 // below this -> "bailed"
-	bingeGapHours      = 4     // episodes more than this far apart start a new run
-	profileTopN        = 10    // list length for abandoned / rewatch / binge panels
+	bingeGapHours      = 4    // episodes more than this far apart start a new run
+	profileTopN        = 10   // list length for abandoned / rewatch / binge panels
 )
 
 var profileRangeList = []string{"30d", "90d", "1y", "all"}
