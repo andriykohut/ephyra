@@ -6,8 +6,11 @@ import { Panel } from "./Panel";
 
 function mmss(sec: number): string {
   const s = Math.max(0, Math.round(sec));
-  const m = Math.floor(s / 60);
-  return `${m}:${String(s % 60).padStart(2, "0")}`;
+  const h = Math.floor(s / 3600);
+  const m = Math.floor(s / 60) % 60;
+  const ss = String(s % 60).padStart(2, "0");
+  // films roll over to h:mm:ss; anything shorter stays m:ss
+  return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
 }
 
 function resLabel(w: number): string {
@@ -108,7 +111,7 @@ export function NowPlayingCard({ s }: { s: NowSession }) {
               <div className="h-1.5 overflow-hidden rounded-full bg-line/50">
                 <div
                   className={cn(
-                    "h-full rounded-full transition-[width] duration-1000 ease-linear",
+                    "h-full rounded-full motion-safe:transition-[width] motion-safe:duration-1000 motion-safe:ease-linear",
                     fill,
                   )}
                   style={{ width: `${pct}%` }}
@@ -118,7 +121,7 @@ export function NowPlayingCard({ s }: { s: NowSession }) {
                 <span
                   aria-hidden
                   className={cn(
-                    "absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full transition-[left] duration-1000 ease-linear motion-safe:animate-pulse",
+                    "absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full motion-safe:transition-[left] motion-safe:duration-1000 motion-safe:ease-linear motion-safe:animate-pulse",
                     transcoding
                       ? "bg-violet shadow-[0_0_8px_2px_rgba(155,123,255,0.55)]"
                       : "bg-cyan shadow-[0_0_8px_2px_rgba(79,224,216,0.55)]",
