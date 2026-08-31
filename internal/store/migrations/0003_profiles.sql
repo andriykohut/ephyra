@@ -14,6 +14,9 @@ CREATE TABLE playback_events (
   item_name         TEXT NOT NULL DEFAULT '',
   series_id         TEXT NOT NULL DEFAULT '',
   series_name       TEXT NOT NULL DEFAULT '',
+  item_runtime_sec  INTEGER NOT NULL DEFAULT 0,   -- library-fact snapshot, refreshed on conflict
+  item_year         INTEGER NOT NULL DEFAULT 0,
+  item_genres       TEXT NOT NULL DEFAULT '',     -- pipe-joined, like jellyfin.db's Genres column
   dedup_hash        TEXT NOT NULL
 );
 CREATE UNIQUE INDEX ux_playback_events_dedup ON playback_events (dedup_hash);

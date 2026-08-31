@@ -322,7 +322,7 @@ func TestRunWatchOnce_PopulatesProfileTables(t *testing.T) {
 	t.Cleanup(func() { st.Close() })
 
 	fs := &fakeSource{events: []source.PlaybackEvent{
-		{At: time.Date(2025, 1, 6, 20, 0, 0, 0, time.UTC), UserID: "u1", ItemID: "m1", ItemType: "movie", Method: "DirectPlay", PlayDurationSec: 6000, ItemRuntimeSec: 6000},
+		{At: time.Date(2025, 1, 6, 20, 0, 0, 0, time.UTC), UserID: "u1", ItemID: "m1", ItemType: "movie", Method: "DirectPlay", PlayDurationSec: 6000, ItemRuntimeSec: 6000, ItemYear: 1994, ItemGenres: []string{"Drama"}},
 	}}
 	mt := time.Unix(1000, 0)
 	fs.mtime.Store(&mt)
@@ -335,6 +335,13 @@ func TestRunWatchOnce_PopulatesProfileTables(t *testing.T) {
 	st.DB().QueryRowContext(ctx, `SELECT count(*) FROM agg_profile_summary WHERE user_id='u1'`).Scan(&summ)
 	if summ != 4 { // one row per range
 		t.Fatalf("agg_profile_summary rows for u1 = %d, want 4", summ)
+	}
+	// The library facts must survive the spine round-trip: a fully-watched movie
+	// with a known runtime lands in "finished", not "unknown".
+	var bucket string
+	st.DB().QueryRowContext(ctx, `SELECT bucket FROM agg_profile_completion WHERE user_id='u1' AND range='all' AND scope='movie'`).Scan(&bucket)
+	if bucket != "finished" {
+		t.Fatalf("completion bucket = %q, want finished (runtime lost through the spine?)", bucket)
 	}
 
 	// plugin goes away on the next run -> profile rows stay put

@@ -11,6 +11,14 @@ import (
 	"github.com/andriykohut/ephyra/internal/source"
 )
 
+func joinGenres(gs []string) string { return strings.Join(gs, "|") }
+func splitGenres(s string) []string {
+	if s == "" {
+		return nil
+	}
+	return strings.Split(s, "|")
+}
+
 // spineTimeLayout is how playback_events.at is stored: the plugin's wall-clock
 // components, no zone. Kept parseable so ReadPlaybackEvents can hand aggregate
 // a time.Time whose literal fields match what the plugin wrote.
@@ -41,8 +49,8 @@ func spineDedupHash(ev source.PlaybackEvent) string {
 }
 
 // AppendPlaybackEvents inserts events the spine has not seen and refreshes the
-// enrichable columns (item_name / series_*) on the ones it has. Its own
-// transaction; idempotent.
+// enrichable columns (item_name / series_* / the library-fact snapshot) on the
+// ones it has. Its own transaction; idempotent.
 func (s *Store) AppendPlaybackEvents(ctx context.Context, evs []source.PlaybackEvent) error {
 	if len(evs) == 0 {
 		return nil
@@ -56,16 +64,20 @@ func (s *Store) AppendPlaybackEvents(ctx context.Context, evs []source.PlaybackE
 	const q = `
 		INSERT INTO playback_events
 		  (at, user_id, item_id, item_type, method, play_duration_sec,
-		   item_name, series_id, series_name, dedup_hash)
-		VALUES (?,?,?,?,?,?,?,?,?,?)
+		   item_name, series_id, series_name, item_runtime_sec, item_year, item_genres, dedup_hash)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(dedup_hash) DO UPDATE SET
-		  item_name   = excluded.item_name,
-		  series_id   = excluded.series_id,
-		  series_name = excluded.series_name`
+		  item_name        = excluded.item_name,
+		  series_id        = excluded.series_id,
+		  series_name      = excluded.series_name,
+		  item_runtime_sec = excluded.item_runtime_sec,
+		  item_year        = excluded.item_year,
+		  item_genres      = excluded.item_genres`
 	for _, e := range evs {
 		if _, err := tx.ExecContext(ctx, q,
 			formatSpineTime(e.At), e.UserID, e.ItemID, e.ItemType, e.Method, e.PlayDurationSec,
-			e.ItemName, e.SeriesID, e.SeriesName, spineDedupHash(e),
+			e.ItemName, e.SeriesID, e.SeriesName,
+			e.ItemRuntimeSec, e.ItemYear, joinGenres(e.ItemGenres), spineDedupHash(e),
 		); err != nil {
 			return err
 		}
@@ -73,13 +85,13 @@ func (s *Store) AppendPlaybackEvents(ctx context.Context, evs []source.PlaybackE
 	return tx.Commit()
 }
 
-// ReadPlaybackEvents returns the whole spine, oldest first. The three
-// library-fact fields (ItemRuntimeSec / ItemGenres / ItemYear) are NOT stored
-// here -- the caller re-enriches from the jellyfin.db copy.
+// ReadPlaybackEvents returns the whole spine, oldest first, including the
+// library-fact snapshot (runtime / year / genres) captured at ingest and
+// refreshed whenever the plugin re-reports the play while the item still exists.
 func (s *Store) ReadPlaybackEvents(ctx context.Context) ([]source.PlaybackEvent, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT at, user_id, item_id, item_type, method, play_duration_sec,
-		       item_name, series_id, series_name
+		       item_name, series_id, series_name, item_runtime_sec, item_year, item_genres
 		FROM playback_events ORDER BY at`)
 	if err != nil {
 		return nil, err
@@ -89,12 +101,14 @@ func (s *Store) ReadPlaybackEvents(ctx context.Context) ([]source.PlaybackEvent,
 	var out []source.PlaybackEvent
 	for rows.Next() {
 		var e source.PlaybackEvent
-		var atRaw string
+		var atRaw, genres string
 		if err := rows.Scan(&atRaw, &e.UserID, &e.ItemID, &e.ItemType, &e.Method,
-			&e.PlayDurationSec, &e.ItemName, &e.SeriesID, &e.SeriesName); err != nil {
+			&e.PlayDurationSec, &e.ItemName, &e.SeriesID, &e.SeriesName,
+			&e.ItemRuntimeSec, &e.ItemYear, &genres); err != nil {
 			return nil, err
 		}
 		e.At = parseSpineTime(atRaw)
+		e.ItemGenres = splitGenres(genres)
 		out = append(out, e)
 	}
 	return out, rows.Err()

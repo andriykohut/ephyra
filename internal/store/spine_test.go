@@ -23,6 +23,7 @@ func ev(at time.Time, user, item, typ string, dur int64) source.PlaybackEvent {
 		At: at, UserID: user, ItemID: item, ItemType: typ,
 		Method: "DirectPlay", PlayDurationSec: dur,
 		ItemName: item + "-name",
+		ItemRuntimeSec: 6000, ItemYear: 2001, ItemGenres: []string{"Comedy", "Drama"},
 	}
 }
 
@@ -86,6 +87,10 @@ func TestReadPlaybackEvents_RoundTripOrdered(t *testing.T) {
 	}
 	if !got[0].At.Equal(b.At) || got[0].PlayDurationSec != 3600 || got[0].ItemType != "movie" {
 		t.Fatalf("round-trip lost fields: %+v", got[0])
+	}
+	if got[0].ItemRuntimeSec != 6000 || got[0].ItemYear != 2001 ||
+		len(got[0].ItemGenres) != 2 || got[0].ItemGenres[0] != "Comedy" {
+		t.Fatalf("round-trip lost library facts: %+v", got[0])
 	}
 }
 
