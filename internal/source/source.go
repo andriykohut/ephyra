@@ -66,7 +66,8 @@ type LibrarySnapshot struct {
 }
 
 // PlaybackEvent is one row from the Playback Reporting plugin, enriched (where
-// jellyfin.db resolves it) with current names and series linkage.
+// jellyfin.db resolves it) with current names, series linkage, and the item
+// facts aggregate.Profiles needs (runtime / genres / year).
 type PlaybackEvent struct {
 	At               time.Time // parsed literal components (server-local wall time)
 	UserID, UserName string    // UserID canonical
@@ -76,6 +77,10 @@ type PlaybackEvent struct {
 	SeriesName       string
 	Method           string // RAW plugin string; bucketed in aggregate
 	PlayDurationSec  int64
+
+	ItemRuntimeSec int64    // 0 when unknown or the item is gone
+	ItemGenres     []string // nil when unknown
+	ItemYear       int      // 0 when unknown
 }
 
 type Source interface {

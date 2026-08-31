@@ -132,6 +132,36 @@ func TestPlaybackEvents_ReadsAndEnriches(t *testing.T) {
 	}
 }
 
+func TestPlaybackEvents_EnrichesItemFacts(t *testing.T) {
+	f := newFS(t, testsupport.TwoDBLayout(t))
+
+	events, err := f.PlaybackEvents(context.Background(), time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Bravo (item id ...000b): RunTimeTicks 60000000000 = 6000s,
+	// ProductionYear 2001, Genres "Comedy".
+	var sawBravo bool
+	for _, e := range events {
+		if e.ItemID == "0000000000000000000000000000000b" {
+			sawBravo = true
+			if e.ItemRuntimeSec != 6000 || e.ItemYear != 2001 ||
+				len(e.ItemGenres) != 1 || e.ItemGenres[0] != "Comedy" {
+				t.Fatalf("bravo facts: rt=%d yr=%d genres=%v", e.ItemRuntimeSec, e.ItemYear, e.ItemGenres)
+			}
+		}
+		if e.ItemID == "deadbeefdeadbeefdeadbeefdeadbeef" {
+			if e.ItemRuntimeSec != 0 || e.ItemYear != 0 || len(e.ItemGenres) != 0 {
+				t.Fatalf("deleted item should be zero-valued: %+v", e)
+			}
+		}
+	}
+	if !sawBravo {
+		t.Fatal("no Bravo event")
+	}
+}
+
 func TestPlaybackEvents_PluginAbsent(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "data", "jellyfin.db"), "")

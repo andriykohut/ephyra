@@ -73,11 +73,16 @@ func enrichPlaybackEvents(jdb *sql.DB, events []source.PlaybackEvent) error {
 		return err
 	}
 
-	type itemInfo struct{ name, seriesID, seriesName string }
+	type itemInfo struct {
+		name, seriesID, seriesName, genres string
+		runtimeTicks                       int64
+		year                               int
+	}
 	items := map[string]itemInfo{}
 	irows, err := jdb.Query(`
 		SELECT lower(replace(Id,'-','')), COALESCE(Name,''),
-		       lower(replace(COALESCE(SeriesId,''),'-','')), COALESCE(SeriesName,'')
+		       lower(replace(COALESCE(SeriesId,''),'-','')), COALESCE(SeriesName,''),
+		       COALESCE(RunTimeTicks,0), COALESCE(ProductionYear,0), COALESCE(Genres,'')
 		FROM BaseItems
 		WHERE Type IN ('` + movieType + `', '` + episodeType + `')`)
 	if err != nil {
@@ -86,7 +91,8 @@ func enrichPlaybackEvents(jdb *sql.DB, events []source.PlaybackEvent) error {
 	for irows.Next() {
 		var id string
 		var info itemInfo
-		if err := irows.Scan(&id, &info.name, &info.seriesID, &info.seriesName); err != nil {
+		if err := irows.Scan(&id, &info.name, &info.seriesID, &info.seriesName,
+			&info.runtimeTicks, &info.year, &info.genres); err != nil {
 			irows.Close()
 			return err
 		}
@@ -107,6 +113,9 @@ func enrichPlaybackEvents(jdb *sql.DB, events []source.PlaybackEvent) error {
 			}
 			events[i].SeriesID = info.seriesID
 			events[i].SeriesName = info.seriesName
+			events[i].ItemRuntimeSec = info.runtimeTicks / 10_000_000 // ticks -> seconds
+			events[i].ItemYear = info.year
+			events[i].ItemGenres = splitGenres(info.genres)
 		}
 	}
 	return nil
