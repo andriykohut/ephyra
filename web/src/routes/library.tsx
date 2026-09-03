@@ -1,8 +1,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createRoute } from "@tanstack/react-router";
-import { lazy, type ReactNode, Suspense } from "react";
+import { lazy, type ReactNode, Suspense, useState } from "react";
 import { libraryOverviewQuery } from "@/api/queries";
-import type { DiskBucket, LabeledCount } from "@/api/types";
+import type { DiskBucket, LabeledCount, LibraryOverview as LibraryOverviewData } from "@/api/types";
 import { GenreBand } from "@/components/GenreBand";
 import { Panel } from "@/components/Panel";
 import { Skeleton } from "@/components/Skeleton";
@@ -93,6 +93,82 @@ function ChartPanel({ title, children }: { title: string; children: ReactNode })
         {title}
       </div>
       {children}
+    </Panel>
+  );
+}
+
+function TagSection({ tags }: { tags: LibraryOverviewData["tags"] }) {
+  const [sel, setSel] = useState<string | null>(null);
+  const { tagged, total } = tags.coverage;
+
+  if (total === 0 || tagged === 0) {
+    return (
+      <Panel className="p-4">
+        <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">
+          tags
+        </div>
+        <p className="font-mono text-[12px] text-muted">No tags in this library.</p>
+      </Panel>
+    );
+  }
+
+  const pct = Math.round((tagged / total) * 100);
+  const max = tags.top[0]?.count ?? 1;
+  const size = (c: number) => 11 + Math.round(Math.sqrt(c / max) * 15);
+
+  const neighbours = sel
+    ? tags.pairs
+        .filter((p) => p.a === sel || p.b === sel)
+        .map((p) => ({ tag: p.a === sel ? p.b : p.a, items: p.items }))
+        .sort((x, y) => y.items - x.items)
+    : [];
+
+  return (
+    <Panel className="p-4">
+      <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">
+        tags
+      </div>
+      <p className="font-mono text-[12px] text-muted">
+        <span className="font-medium text-ink">{fmtInt(tagged)}</span> / {fmtInt(total)} items
+        tagged ({pct}%)
+      </p>
+
+      <div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        {tags.top.map((tg) => (
+          <button
+            key={tg.label}
+            type="button"
+            onClick={() => setSel((s) => (s === tg.label ? null : tg.label))}
+            title={`${tg.label} · ${fmtInt(tg.count)}`}
+            style={{ fontSize: `${size(tg.count)}px` }}
+            className={`font-mono leading-tight transition-colors ${
+              sel === tg.label ? "text-cyan" : "text-muted hover:text-ink"
+            }`}
+          >
+            {tg.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-4 font-mono text-[12px]">
+        {!sel ? (
+          <p className="text-muted">Pick a tag to see what it rides along with.</p>
+        ) : neighbours.length === 0 ? (
+          <p className="text-muted">
+            <span className="text-ink">{sel}</span> — nothing co-occurs above the noise floor.
+          </p>
+        ) : (
+          <p className="text-muted">
+            <span className="text-ink">{sel}</span> →{" "}
+            {neighbours.map((n, i) => (
+              <span key={n.tag}>
+                {i > 0 && " · "}
+                {n.tag} <span className="text-ink">({fmtInt(n.items)})</span>
+              </span>
+            ))}
+          </p>
+        )}
+      </div>
     </Panel>
   );
 }
@@ -216,6 +292,8 @@ export function LibraryOverview() {
           </div>
         </div>
       </Suspense>
+
+      <TagSection tags={data.tags} />
     </div>
   );
 }

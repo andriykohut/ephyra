@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, expect, test, vi } from "vitest";
 import type { Envelope, LibraryOverview as LO } from "@/api/types";
@@ -31,6 +31,14 @@ const sample: Envelope<LO> = {
     ],
     by_decade: [{ label: "2010s", count: 2900 }],
     growth: [{ month: "2024-01", added_items: 40, added_bytes: 1e9, cum_items: 8000 }],
+    tags: {
+      coverage: { tagged: 812, total: 2140 },
+      top: [
+        { label: "heist", count: 143 },
+        { label: "slow burn", count: 96 },
+      ],
+      pairs: [{ a: "heist", b: "vault", items: 11 }],
+    },
   },
   meta: { generated_at: new Date().toISOString(), stale: false },
 };
@@ -75,6 +83,36 @@ test("shows an error state on 503", async () => {
   );
   render(wrap(<LibraryOverview />));
   await waitFor(() => expect(screen.getByText(/first refresh/i)).toBeInTheDocument());
+});
+
+test("renders the tag section: coverage line and cloud", async () => {
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    new Response(JSON.stringify(sample), { status: 200 }),
+  );
+  render(wrap(<LibraryOverview />));
+  expect(await screen.findByText(/812/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "heist" })).toBeInTheDocument();
+});
+
+test("clicking a tag shows its co-occurring tags", async () => {
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    new Response(JSON.stringify(sample), { status: 200 }),
+  );
+  render(wrap(<LibraryOverview />));
+  fireEvent.click(await screen.findByRole("button", { name: "heist" }));
+  expect(await screen.findByText(/vault/)).toBeInTheDocument();
+});
+
+test("zero coverage renders a single line, no cloud", async () => {
+  const empty = {
+    ...sample,
+    data: { ...sample.data, tags: { coverage: { tagged: 0, total: 0 }, top: [], pairs: [] } },
+  };
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    new Response(JSON.stringify(empty), { status: 200 }),
+  );
+  render(wrap(<LibraryOverview />));
+  expect(await screen.findByText(/no tags in this library/i)).toBeInTheDocument();
 });
 
 test("growthForChart drops epoch buckets on either side of the date line", () => {

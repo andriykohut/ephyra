@@ -41,6 +41,11 @@ export interface LibraryOverview {
   genres_top: LabeledCount[];
   by_decade: LabeledCount[];
   growth: GrowthPoint[];
+  tags: {
+    coverage: { tagged: number; total: number };
+    top: LabeledCount[];
+    pairs: { a: string; b: string; items: number }[];
+  };
 }
 
 export interface CleanupItem {
