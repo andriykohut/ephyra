@@ -162,6 +162,34 @@ func TestPlaybackEvents_EnrichesItemFacts(t *testing.T) {
 	}
 }
 
+func TestPlaybackEvents_ItemTags(t *testing.T) {
+	f := newFS(t, testsupport.TwoDBLayout(t))
+
+	events, err := f.PlaybackEvents(context.Background(), time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var sawMovie, sawEpisode bool
+	for _, e := range events {
+		if e.ItemID == "0000000000000000000000000000000a" { // Alpha, movie -> own tags
+			sawMovie = true
+			if len(e.ItemTags) != 3 || e.ItemTags[0] != "heist" || e.ItemTags[1] != "vault" || e.ItemTags[2] != "dystopia" {
+				t.Fatalf("Alpha ItemTags: %#v", e.ItemTags)
+			}
+		}
+		if e.ItemType == "episode" && e.SeriesName == "Some Show" { // -> parent series' tags
+			sawEpisode = true
+			if len(e.ItemTags) != 2 || e.ItemTags[0] != "slow burn" || e.ItemTags[1] != "dystopia" {
+				t.Fatalf("episode inherits series tags, got: %#v", e.ItemTags)
+			}
+		}
+	}
+	if !sawMovie || !sawEpisode {
+		t.Fatalf("missing coverage: movie=%v episode=%v", sawMovie, sawEpisode)
+	}
+}
+
 func TestPlaybackEvents_PluginAbsent(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "data", "jellyfin.db"), "")

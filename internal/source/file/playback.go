@@ -74,15 +74,15 @@ func enrichPlaybackEvents(jdb *sql.DB, events []source.PlaybackEvent) error {
 	}
 
 	type itemInfo struct {
-		name, seriesID, seriesName, genres string
-		runtimeTicks                       int64
-		year                               int
+		name, seriesID, seriesName, genres, tags string
+		runtimeTicks                             int64
+		year                                     int
 	}
 	items := map[string]itemInfo{}
 	irows, err := jdb.Query(`
 		SELECT lower(replace(Id,'-','')), COALESCE(Name,''),
 		       lower(replace(COALESCE(SeriesId,''),'-','')), COALESCE(SeriesName,''),
-		       COALESCE(RunTimeTicks,0), COALESCE(ProductionYear,0), COALESCE(Genres,'')
+		       COALESCE(RunTimeTicks,0), COALESCE(ProductionYear,0), COALESCE(Genres,''), COALESCE(Tags,'')
 		FROM BaseItems
 		WHERE Type IN ('` + movieType + `', '` + episodeType + `')`)
 	if err != nil {
@@ -92,7 +92,7 @@ func enrichPlaybackEvents(jdb *sql.DB, events []source.PlaybackEvent) error {
 		var id string
 		var info itemInfo
 		if err := irows.Scan(&id, &info.name, &info.seriesID, &info.seriesName,
-			&info.runtimeTicks, &info.year, &info.genres); err != nil {
+			&info.runtimeTicks, &info.year, &info.genres, &info.tags); err != nil {
 			irows.Close()
 			return err
 		}
@@ -100,6 +100,25 @@ func enrichPlaybackEvents(jdb *sql.DB, events []source.PlaybackEvent) error {
 	}
 	irows.Close()
 	if err := irows.Err(); err != nil {
+		return err
+	}
+
+	// Episodes almost never carry their own Tags; inherit the parent Series'.
+	seriesTags := map[string]string{}
+	srows, err := jdb.Query(`SELECT lower(replace(Id,'-','')), COALESCE(Tags,'') FROM BaseItems WHERE Type = '` + seriesType + `'`)
+	if err != nil {
+		return err
+	}
+	for srows.Next() {
+		var id, tags string
+		if err := srows.Scan(&id, &tags); err != nil {
+			srows.Close()
+			return err
+		}
+		seriesTags[id] = tags
+	}
+	srows.Close()
+	if err := srows.Err(); err != nil {
 		return err
 	}
 
@@ -116,6 +135,11 @@ func enrichPlaybackEvents(jdb *sql.DB, events []source.PlaybackEvent) error {
 			events[i].ItemRuntimeSec = info.runtimeTicks / 10_000_000 // ticks -> seconds
 			events[i].ItemYear = info.year
 			events[i].ItemGenres = splitGenres(info.genres)
+			if events[i].ItemType == "episode" {
+				events[i].ItemTags = splitTags(seriesTags[info.seriesID])
+			} else {
+				events[i].ItemTags = splitTags(info.tags)
+			}
 		}
 	}
 	return nil
