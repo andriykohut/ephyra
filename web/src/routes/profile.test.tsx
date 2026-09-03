@@ -63,13 +63,17 @@ const detail: Envelope<Profile> = {
       genre: [{ key: "Drama", watch_sec: 6000, plays: 4 }],
       decade: [{ key: "1990", watch_sec: 6000, plays: 4 }],
       length: [{ key: "90-120m", watch_sec: 6000, plays: 4 }],
+      tag: [{ key: "heist", watch_sec: 6000, plays: 4 }],
       signature_genres: ["Drama"],
+      signature_tags: ["heist"],
     },
     baseline: {
       genre: [{ key: "Drama", watch_sec: 1000 }],
       decade: [{ key: "1990", watch_sec: 1000 }],
       length: [{ key: "90-120m", watch_sec: 1000 }],
+      tag: [{ key: "heist", watch_sec: 1000 }],
     },
+    tag_overlap: [{ user: "u2", user_name: "bob", cosine: 0.62, shared: ["heist", "vault"] }],
   },
   meta: { generated_at: new Date().toISOString(), stale: false },
 };
@@ -94,6 +98,22 @@ test("renders the picked user's panels", async () => {
   expect(screen.getAllByText(/The Show/).length).toBeGreaterThan(0);
   expect(screen.getByText(/Half-Watched/)).toBeInTheDocument();
   expect(screen.getAllByText(/Drama/).length).toBeGreaterThan(0);
+  expect(screen.getAllByText("heist").length).toBeGreaterThan(0);
+  expect(screen.getByText(/bob/)).toBeInTheDocument();
+  expect(screen.getByText(/62%/)).toBeInTheDocument();
+});
+
+test("hides the overlap block when tag_overlap is empty", async () => {
+  vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+    const url = String(input);
+    const body = url.includes("/api/profile/")
+      ? { ...detail, data: { ...detail.data, tag_overlap: [] } }
+      : list;
+    return Promise.resolve(new Response(JSON.stringify(body), { status: 200 }));
+  });
+  render(wrap(<ProfileView user="u1" range="30d" onUser={noop} onRange={noop} />));
+  await waitFor(() => expect(screen.getByText(/Alpha/)).toBeInTheDocument());
+  expect(screen.queryByText(/overlap with others/i)).not.toBeInTheDocument();
 });
 
 test("plugin-absent shows the enable-plugin notice", async () => {

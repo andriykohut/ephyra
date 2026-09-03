@@ -239,11 +239,15 @@ export interface Profile {
     genre: TasteEntry[];
     decade: TasteEntry[];
     length: TasteEntry[];
+    tag: TasteEntry[];
     signature_genres: string[];
+    signature_tags: string[];
   };
   baseline: {
     genre: { key: string; watch_sec: number }[];
     decade: { key: string; watch_sec: number }[];
     length: { key: string; watch_sec: number }[];
+    tag: { key: string; watch_sec: number }[];
   };
+  tag_overlap: { user: string; user_name: string; cosine: number; shared: string[] }[];
 }

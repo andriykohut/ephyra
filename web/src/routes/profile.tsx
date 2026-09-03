@@ -86,16 +86,18 @@ function CompletionBar({ completion }: { completion: P["completion"] }) {
 function ShareBars({
   user,
   baseline,
+  label = "data",
 }: {
   user: { key: string; watch_sec: number }[];
   baseline: { key: string; watch_sec: number }[];
+  label?: string;
 }) {
   const uTotal = user.reduce((a, g) => a + g.watch_sec, 0) || 1;
   const bTotal = baseline.reduce((a, g) => a + g.watch_sec, 0) || 1;
   const bShare = new Map(baseline.map((g) => [g.key, g.watch_sec / bTotal]));
   const rows = [...user].sort((a, b) => b.watch_sec - a.watch_sec).slice(0, 8);
   if (rows.length === 0)
-    return <p className="font-mono text-[12px] text-muted">No genre data for this user.</p>;
+    return <p className="font-mono text-[12px] text-muted">No {label} data for this user.</p>;
 
   return (
     <div className="flex flex-col gap-2">
@@ -330,12 +332,51 @@ function ProfileBody({ d, onRange }: { d: P; onRange: (v: WatchRange) => void })
         </Section>
 
         <Section title="taste fingerprint">
-          <ShareBars user={d.taste.genre} baseline={d.baseline.genre} />
+          <ShareBars user={d.taste.genre} baseline={d.baseline.genre} label="genre" />
           {d.taste.signature_genres.length > 0 && (
             <p className="mt-3 font-mono text-[11.5px] text-muted">
               leans <span className="text-ink">{d.taste.signature_genres.join(", ")}</span>
             </p>
           )}
+
+          <div className="mt-4 mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">
+            tags
+          </div>
+          <ShareBars user={d.taste.tag} baseline={d.baseline.tag} label="tag" />
+          {d.taste.signature_tags.length > 0 && (
+            <p className="mt-3 font-mono text-[11.5px] text-muted">
+              also leans <span className="text-ink">{d.taste.signature_tags.join(", ")}</span>
+            </p>
+          )}
+
+          {d.tag_overlap.length > 0 && (
+            <div className="mt-4">
+              <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">
+                overlap with others
+              </div>
+              <div className="flex flex-col gap-1.5">
+                {d.tag_overlap.map((o) => (
+                  <div key={o.user} className="grid grid-cols-[120px_1fr] items-center gap-3">
+                    <span className="truncate font-mono text-[12px] text-ink" title={o.user_name}>
+                      {o.user_name}{" "}
+                      <span className="text-muted">{Math.round(o.cosine * 100)}%</span>
+                    </span>
+                    <span className="relative block h-[14px] rounded bg-panel/60">
+                      <span
+                        className="absolute inset-y-0 left-0 rounded bg-violet/70"
+                        style={{ width: `${Math.min(100, o.cosine * 100)}%` }}
+                        title={o.shared.join(", ")}
+                      />
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-1 font-mono text-[11px] text-muted">
+                bar = tag-taste similarity · hover for shared tags
+              </p>
+            </div>
+          )}
+
           <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[11.5px] text-muted">
             {[...d.taste.decade]
               .sort((a, b) => a.key.localeCompare(b.key))
