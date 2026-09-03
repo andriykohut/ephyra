@@ -30,7 +30,8 @@ type LibraryItem struct {
 	DateRaw       string    // original string, for diagnostics
 	Year          int
 	Genres        []string
-	Library       string // resolved folder name, or "Unknown"
+	Tags          []string // normalized: lower(trim), empties dropped, deduped within the item
+	Library       string   // resolved folder name, or "Unknown"
 	Container     string
 	VideoCodec    string // raw, e.g. "hevc"; "" if no video stream
 	Width         int    // primary video stream width; 0 if none

@@ -57,6 +57,7 @@ SELECT
   COALESCE(i.DateCreated, ''),
   COALESCE(i.ProductionYear, 0),
   COALESCE(i.Genres, ''),
+  COALESCE(i.Tags, ''),
   COALESCE(f.lib, 'Unknown'),
   COALESCE(i.Path, ''),
   v.codec, v.width, v.color_transfer, v.dv_profile,
@@ -119,14 +120,14 @@ func defaultQueryLibrary(db *sql.DB) (source.LibrarySnapshot, error) {
 	var snap source.LibrarySnapshot
 	for rows.Next() {
 		var (
-			name, typ, dateRaw, genres, library, itemPath string
-			rawID, rawSeriesID, seriesName                string
-			size, ticks                                   int64
-			year                                          int
-			codec, colorTransfer                          sql.NullString
-			width, dvProfile                              sql.NullInt64
+			name, typ, dateRaw, genres, tags, library, itemPath string
+			rawID, rawSeriesID, seriesName                      string
+			size, ticks                                         int64
+			year                                                int
+			codec, colorTransfer                                sql.NullString
+			width, dvProfile                                    sql.NullInt64
 		)
-		if err := rows.Scan(&name, &typ, &size, &ticks, &dateRaw, &year, &genres, &library, &itemPath,
+		if err := rows.Scan(&name, &typ, &size, &ticks, &dateRaw, &year, &genres, &tags, &library, &itemPath,
 			&codec, &width, &colorTransfer, &dvProfile, &rawID, &rawSeriesID, &seriesName); err != nil {
 			return source.LibrarySnapshot{}, err
 		}
@@ -140,6 +141,7 @@ func defaultQueryLibrary(db *sql.DB) (source.LibrarySnapshot, error) {
 			DateCreated:   parseJellyfinTime(dateRaw),
 			Year:          year,
 			Genres:        splitGenres(genres),
+			Tags:          splitTags(tags),
 			Library:       library,
 			Container:     containerFromPath(itemPath),
 			VideoCodec:    codec.String,
@@ -270,6 +272,22 @@ func splitGenres(s string) []string {
 		if g = strings.TrimSpace(g); g != "" {
 			out = append(out, g)
 		}
+	}
+	return out
+}
+
+// splitTags is splitGenres plus lowercasing and dedup — item tags are freeform
+// and case-inconsistent, genres are a controlled vocabulary.
+func splitTags(s string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, t := range strings.Split(s, "|") {
+		t = strings.ToLower(strings.TrimSpace(t))
+		if t == "" || seen[t] {
+			continue
+		}
+		seen[t] = true
+		out = append(out, t)
 	}
 	return out
 }

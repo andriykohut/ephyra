@@ -19,10 +19,15 @@ comparison.
 `Id` TEXT (dashed-uppercase GUID, e.g. `0A1B2C3D-4E5F-6071-8293-A4B5C6D7E8F9`),
 `Type` TEXT, `Name` TEXT, `Path` TEXT, `Size` BIGINT, `RunTimeTicks` BIGINT,
 `DateCreated` TEXT (`2025-04-13 16:51:00.4165068`, space-separated, no `Z`),
-`ProductionYear` INT, `Genres` TEXT (pipe-delimited), `TopParentId` TEXT,
+`ProductionYear` INT, `Genres` TEXT (pipe-delimited), `Tags` TEXT (pipe-delimited;
+freeform, usually TMDb keywords, often sparse), `TopParentId` TEXT,
 `Width` INT, `Height` INT, `IsVirtualItem` INT, `IsFolder` INT.
 
 - No `Container` column — Ephyra derives it from `Path`'s extension.
+- `Tags` is Jellyfin's freeform item-tag list. TMDb metadata agents write keyword
+  lists here. Verified present as a pipe-delimited `BaseItems` column on 10.11;
+  re-check on a real DB after any Jellyfin upgrade. Episodes generally have none —
+  the watch path inherits the parent Series' tags.
 - `Type` values unchanged: Movie = `MediaBrowser.Controller.Entities.Movies.Movie`,
   Episode = `...TV.Episode`, Series = `...TV.Series`,
   Folder = `...Entities.Folder`, CollectionFolder = `...Entities.CollectionFolder`.

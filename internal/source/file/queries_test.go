@@ -60,6 +60,26 @@ func TestDefaultQueryLibrary(t *testing.T) {
 	}
 }
 
+func TestDefaultQueryLibrary_Tags(t *testing.T) {
+	snap, err := defaultQueryLibrary(openFixture(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	byName := map[string][]string{}
+	for _, it := range snap.Items {
+		byName[it.Name] = it.Tags
+	}
+	if got := byName["Alpha"]; len(got) != 3 || got[0] != "heist" || got[1] != "vault" || got[2] != "dystopia" {
+		t.Fatalf("Alpha tags normalized wrong: %#v", got)
+	}
+	if got := byName["Charlie"]; len(got) != 2 || got[0] != "heist" || got[1] != "vault" {
+		t.Fatalf("Charlie tags: %#v", got)
+	}
+	if got := byName["S1E1"]; len(got) != 0 {
+		t.Fatalf("episode should have no own tags in the library snapshot: %#v", got)
+	}
+}
+
 func TestQueryLibrary_PlayedStateAndUsers(t *testing.T) {
 	snap, err := defaultQueryLibrary(openFixture(t))
 	if err != nil {

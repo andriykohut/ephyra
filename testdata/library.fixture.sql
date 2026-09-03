@@ -14,6 +14,7 @@ CREATE TABLE BaseItems (
   DateCreated    TEXT,
   ProductionYear INTEGER,
   Genres         TEXT,
+  Tags           TEXT,
   TopParentId    TEXT,
   Width          INTEGER,
   Height         INTEGER,
@@ -61,6 +62,15 @@ INSERT INTO BaseItems (Id, Type, Name, TopParentId, IsFolder) VALUES
  ('00000000-0000-0000-0000-0000000000F0', 'MediaBrowser.Controller.Entities.TV.Series', 'Some Show', '1F000000-0000-0000-0000-0000000000F2', 1);
 INSERT INTO BaseItems (Id, Type, Name, TopParentId, IsVirtualItem, Size, RunTimeTicks) VALUES
  ('00000000-0000-0000-0000-0000000000F9', 'MediaBrowser.Controller.Entities.TV.Episode', 'S1E99 (missing)', '1F000000-0000-0000-0000-0000000000F2', 1, 999999999, 18000000000);
+
+-- item tags (TMDb-keyword-ish). Alpha's raw value exercises splitTags:
+-- mixed case, padding, and a duplicate all normalize away. Episodes E1/E2 carry
+-- no Tags of their own -- the watch path inherits them from the series row.
+UPDATE BaseItems SET Tags = 'Heist| vault |dystopia|heist' WHERE Id = '00000000-0000-0000-0000-00000000000A';
+UPDATE BaseItems SET Tags = 'heist|vault'                  WHERE Id = '00000000-0000-0000-0000-00000000000B';
+UPDATE BaseItems SET Tags = 'heist|vault'                  WHERE Id = '00000000-0000-0000-0000-00000000000C';
+UPDATE BaseItems SET Tags = 'heist|dystopia'              WHERE Id = '00000000-0000-0000-0000-00000000000D';
+UPDATE BaseItems SET Tags = 'slow burn|dystopia'          WHERE Id = '00000000-0000-0000-0000-0000000000F0';
 
 -- video + audio streams
 INSERT INTO MediaStreamInfos (ItemId, StreamIndex, StreamType, Codec, Width, Height, ColorTransfer, DvProfile) VALUES
