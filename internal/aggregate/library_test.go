@@ -16,6 +16,33 @@ func mkItem(name, typ string, size, runtimeSec int64, date string, year int, gen
 	}
 }
 
+func TestLibraryAggregates_Tags(t *testing.T) {
+	mk := func(name string, tags []string) source.LibraryItem {
+		return source.LibraryItem{Name: name, Type: "movie", Year: 2000, Tags: tags}
+	}
+	snap := source.LibrarySnapshot{Items: []source.LibraryItem{
+		mk("A", []string{"heist", "vault", "dystopia"}),
+		mk("B", []string{"heist", "vault"}),
+		mk("C", []string{"heist", "vault"}),
+		mk("D", []string{"heist", "dystopia"}),
+		mk("E", nil),
+	}}
+	a := Library(snap, time.UTC)
+
+	if a.TagCoverage.ItemsTagged != 4 || a.TagCoverage.ItemsTotal != 5 {
+		t.Fatalf("coverage: %+v", a.TagCoverage)
+	}
+	if a.Totals["tags.tagged_items"] != 4 || a.Totals["tags.total_items"] != 5 {
+		t.Fatalf("coverage totals: %v / %v", a.Totals["tags.tagged_items"], a.Totals["tags.total_items"])
+	}
+	if len(a.TagsTop) == 0 || a.TagsTop[0].Label != "heist" || a.TagsTop[0].Count != 4 {
+		t.Fatalf("TagsTop head: %+v", a.TagsTop)
+	}
+	if len(a.TagPairs) != 1 || a.TagPairs[0].A != "heist" || a.TagPairs[0].B != "vault" || a.TagPairs[0].Items != 3 {
+		t.Fatalf("TagPairs: %+v", a.TagPairs)
+	}
+}
+
 func TestLibraryAggregates(t *testing.T) {
 	dv := 8
 	snap := source.LibrarySnapshot{

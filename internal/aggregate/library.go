@@ -27,6 +27,17 @@ type GrowthPoint struct {
 	CumItems   int64  `json:"cum_items"`
 }
 
+type TagCoverage struct {
+	ItemsTagged int64 `json:"tagged"`
+	ItemsTotal  int64 `json:"total"`
+}
+
+type TagPair struct {
+	A     string `json:"a"`
+	B     string `json:"b"`
+	Items int64  `json:"items"`
+}
+
 type LibraryAggregates struct {
 	Totals           map[string]float64
 	ItemsByLibrary   []LabeledCount
@@ -37,6 +48,9 @@ type LibraryAggregates struct {
 	GenresTop        []LabeledCount
 	ByDecade         []LabeledCount
 	Growth           []GrowthPoint
+	TagsTop          []LabeledCount
+	TagCoverage      TagCoverage
+	TagPairs         []TagPair
 }
 
 type diskAcc struct {
@@ -60,6 +74,8 @@ func Library(snap source.LibrarySnapshot, loc *time.Location) LibraryAggregates 
 		"count.uhd":         0,
 		"count.hdr":         0,
 		"count.dv":          0,
+		"tags.tagged_items": 0,
+		"tags.total_items":  0,
 	}
 	byLibraryCount := map[string]int64{}
 	diskRes := map[string]*diskAcc{}
@@ -67,6 +83,9 @@ func Library(snap source.LibrarySnapshot, loc *time.Location) LibraryAggregates 
 	diskContainer := map[string]*diskAcc{}
 	diskLibrary := map[string]*diskAcc{}
 	genre := map[string]int64{}
+	tag := map[string]int64{}
+	tagPairs := map[[2]string]int64{}
+	var taggedItems int64
 	decade := map[string]int64{}
 	growthItems := map[string]int64{}
 	growthBytes := map[string]int64{}
@@ -118,6 +137,21 @@ func Library(snap source.LibrarySnapshot, loc *time.Location) LibraryAggregates 
 		for _, g := range it.Genres {
 			genre[g]++
 		}
+		if len(it.Tags) > 0 {
+			taggedItems++
+		}
+		for _, tg := range it.Tags {
+			tag[tg]++
+		}
+		for i := 0; i < len(it.Tags); i++ {
+			for j := i + 1; j < len(it.Tags); j++ {
+				x, y := it.Tags[i], it.Tags[j]
+				if x > y {
+					x, y = y, x
+				}
+				tagPairs[[2]string{x, y}]++
+			}
+		}
 		decade[Decade(it.Year)]++
 
 		if !it.DateCreated.IsZero() {
@@ -136,6 +170,35 @@ func Library(snap source.LibrarySnapshot, loc *time.Location) LibraryAggregates 
 	out.GenresTop = topN(labeledSortedDesc(genre), 15)
 	out.ByDecade = decadeSlice(decade)
 	out.Growth = growthSlice(growthItems, growthBytes)
+
+	totals["tags.tagged_items"] = float64(taggedItems)
+	totals["tags.total_items"] = float64(len(snap.Items))
+	out.TagCoverage = TagCoverage{ItemsTagged: taggedItems, ItemsTotal: int64(len(snap.Items))}
+	out.TagsTop = topN(labeledSortedDesc(tag), 120)
+	out.TagPairs = tagPairsSlice(tagPairs, 3, 400)
+	return out
+}
+
+func tagPairsSlice(m map[[2]string]int64, minSupport int64, limit int) []TagPair {
+	out := make([]TagPair, 0, len(m))
+	for k, v := range m {
+		if v < minSupport {
+			continue
+		}
+		out = append(out, TagPair{A: k[0], B: k[1], Items: v})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Items != out[j].Items {
+			return out[i].Items > out[j].Items
+		}
+		if out[i].A != out[j].A {
+			return out[i].A < out[j].A
+		}
+		return out[i].B < out[j].B
+	})
+	if len(out) > limit {
+		out = out[:limit]
+	}
 	return out
 }
 
