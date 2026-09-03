@@ -23,7 +23,8 @@ In:
 - Profile-side aggregates: `dim='tag'` taste rows + baseline (reuses existing
   `agg_profile_taste` / `agg_taste_baseline`), `signature_tags`, and a new
   per-user-pair tag-vector cosine overlap.
-- API: extend `/api/library` and `/api/profiles/{user}` payloads. No new routes.
+- API: extend `/api/library/overview` and `/api/profile/{userID}` payloads. No
+  new routes.
 - Frontend: one new section on Library Overview, additions to the existing taste
   section on Profiles.
 
@@ -190,26 +191,31 @@ type TagPair struct {
 Computed in the single existing `snap.Items` walk in `Library(...)`:
 
 - `TagsTop`: `map[string]int64` tag → count; `ItemsTagged++` for any item with
-  ≥1 tag; `ItemsTotal` = len(items) (or the same denominator the existing
-  `Totals["items"]` uses — match it).
+  ≥1 tag; `ItemsTotal` = `len(snap.Items)` (matches `Totals["items.total"]`).
 - `TagPairs`: for each item, for each unordered pair of its distinct tags,
   `pairs[{a,b}]++`. After the walk, drop pairs with `Items < minSupport`
   (`minSupport = 3`), sort desc by `Items` then `(A, B)`, cap at 400.
 - `TagsTop` sort desc by count then label, cap at 120.
+- Also set `Totals["tags.tagged_items"]` and `Totals["tags.total_items"]` so the
+  counts persist through the existing `agg_totals` path.
 
-Coverage lives only in `TagCoverage` (the typed struct field), not in the
-`Totals` map. It is persisted to its own single-row table and the API reads it
-from there — see Section 3.
+`TagCoverage` is a typed convenience struct on `LibraryAggregates`
+(`{ItemsTagged, ItemsTotal int64}`); its values also live in the `Totals` map
+under `tags.tagged_items` / `tags.total_items`, which is what actually gets
+persisted (`agg_totals`). The API reader rebuilds the `{tagged, total}` JSON
+object from those two `agg_totals` rows. No dedicated coverage table.
 
-## Section 3 — Storage: migration `0004_tags.sql`
+## Section 3 — Storage
+
+The library side already stores its distributions in generic tables
+(`agg_totals(metric, value)`, `agg_distribution(dimension, bucket, items)`), all
+full-rewritten per refresh. Tags reuse those. Only two genuinely new shapes —
+co-occurrence pairs and per-user-pair overlap — get their own tables.
+
+### Migration `0004_tags.sql`
 
 ```sql
 ALTER TABLE playback_events ADD COLUMN item_tags TEXT NOT NULL DEFAULT '';
-
-CREATE TABLE agg_library_tags (
-  tag   TEXT NOT NULL PRIMARY KEY,
-  items INTEGER NOT NULL
-);
 
 CREATE TABLE agg_library_tag_pairs (
   tag_a TEXT NOT NULL,
@@ -230,26 +236,33 @@ CREATE TABLE agg_profile_tag_overlap (
 );
 ```
 
-Plus a single-row coverage table (`COUNT(*)` on `agg_library_tags` would give
-distinct tag count, not tagged-item count, so the two counts are stored
-explicitly):
+Forward-only, integer-prefixed, does not touch `schema_migrations`. Both new
+tables are full-rewritten per refresh like the other `agg_*`.
 
-```sql
-CREATE TABLE agg_library_tag_coverage (
-  tagged INTEGER NOT NULL,
-  total  INTEGER NOT NULL
-);
-```
+### Where the rest of the tag data lands
 
-All four tables are forward-only, integer-prefixed, and do not touch
-`schema_migrations`. All are rewritten per refresh like the other `agg_*`.
+- **Tag cloud** → `agg_distribution` with `dimension = 'tag'`. The library
+  writer's `DELETE FROM agg_distribution WHERE dimension IN (...)` list and its
+  `distros` insert loop both gain `'tag'` / `a.TagsTop`. Reader: another
+  `s.readDistro(ctx, "tag", false)` call.
+- **Coverage** → `agg_totals` rows `tags.tagged_items` and `tags.total_items`,
+  written by `insertTotals` from the `Totals` map. So `aggregate.Library` *does*
+  put the two coverage counts into the `Totals` map after all (keys
+  `tags.tagged_items`, `tags.total_items`); `TagCoverage` is just the typed
+  mirror the API reader builds from those two `agg_totals` rows. (This
+  supersedes Section 2's "not in the `Totals` map" note — the generic-table
+  path needs them there.)
 
 ### Writes
 
-- `internal/store/writes.go` (library aggregates txn): add
-  `DELETE FROM agg_library_tags`, `agg_library_tag_pairs`,
-  `agg_library_tag_coverage` to the existing wipe, then insert from
-  `LibraryAggregates.TagsTop` / `TagPairs` / `TagCoverage`.
+- `internal/store/writes.go` (library aggregates txn):
+  - add `'tag'` to the `DELETE FROM agg_distribution WHERE dimension IN (...)`
+    list;
+  - add `{"tag", a.TagsTop}` to the `distros` insert slice;
+  - `insertTotals` already writes every key in `a.Totals`, so the two
+    `tags.*_items` keys persist with no code change;
+  - add `DELETE FROM agg_library_tag_pairs` to the wipe list and an insert loop
+    over `a.TagPairs`.
 - `internal/store/writes_profile.go`: add `DELETE FROM agg_profile_tag_overlap`
   to the list at line 24, then insert from `ProfileAggregates.TagOverlap`.
   `agg_profile_taste` / `agg_taste_baseline` inserts already loop over
@@ -266,7 +279,7 @@ run; no data migration.
 
 ## Section 4 — API
 
-### `GET /api/library`
+### `GET /api/library/overview`
 
 `data` gains:
 
@@ -282,17 +295,16 @@ Co-occurrence is resolved client-side from `pairs`; no per-tag endpoint.
 All arrays through `orEmpty`. `coverage` is always present (zeroes for an
 untagged library).
 
-### `GET /api/profiles/{user}?range=`
+### `GET /api/profile/{userID}?range=`
 
 - `taste` gains `tag: TasteEntry[]` (parallel to `genre` / `decade` / `length`).
 - `baseline` gains `tag: BaselineEntry[]`.
-- `taste` gains `signature_tags: string[]` next to `signature_genres`, computed
-  by `signatureGenres(...)` reused on the tag dim (rename the helper to
-  `signatureShares` or add a thin `signatureTags` wrapper). **Support floor:**
-  skip a tag whose user row has `< 2` plays or `< 120` watch-seconds before
-  scoring, so a trivial sample cannot become a signature. (The genre version has
-  only `delta > 0`; the floor is tag-specific and lives in the wrapper or as a
-  param.)
+- `taste` gains `signature_tags: string[]` next to `signature_genres`. Generalize
+  the existing `signatureGenres(userGenre, baseGenre []…)` into
+  `signatureShares(user []TasteEntry, base []BaselineEntry, minPlays, minSec int64) []string`
+  (keeping a `signatureGenres` that calls it with `0, 0`), and call it for tags
+  with a **support floor** of `minPlays=2, minSec=120` so a trivial sample can't
+  become a signature.
 - new key `tag_overlap`:
 
 ```jsonc
@@ -408,16 +420,17 @@ Extend the existing `taste fingerprint` `<Section>` (line 332):
 
 - Migration `0004` applies on top of `0003`.
 - Round-trip `item_tags` through the spine upsert incl. refresh-on-conflict.
-- Round-trip `agg_library_tags`, `agg_library_tag_pairs`,
-  `agg_library_tag_coverage`, `agg_profile_tag_overlap`.
+- Round-trip the tag cloud (`agg_distribution` dimension `'tag'`), the two
+  `agg_totals` coverage rows, `agg_library_tag_pairs`, and
+  `agg_profile_tag_overlap`.
 - `dim='tag'` rows round-trip through `agg_profile_taste` / `agg_taste_baseline`.
 - Every new slice comes back `[]`, never `null`.
 
 ### `internal/api`
 
-- `/api/library` response includes `tags` with `coverage` / `top` / `pairs`;
-  empty-library shape has `coverage:{tagged:0,total:0}` and `[]` arrays.
-- `/api/profiles/{user}` includes `taste.tag`, `baseline.tag`,
+- `/api/library/overview` response includes `tags` with `coverage` / `top` /
+  `pairs`; empty-library shape has `coverage:{tagged:0,total:0}` and `[]` arrays.
+- `/api/profile/{userID}` includes `taste.tag`, `baseline.tag`,
   `taste.signature_tags`, `tag_overlap`; solo-user response has
   `tag_overlap: []`.
 
