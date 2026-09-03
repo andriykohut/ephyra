@@ -85,6 +85,15 @@ type TasteBaselineRow struct {
 	WatchSec int64
 }
 
+// ProfileTagOverlapRow is one unordered user pair's tag-taste similarity for a
+// range. UserA < UserB. Emitted only when both users have tagged watch history
+// in range and share at least one tag.
+type ProfileTagOverlapRow struct {
+	UserA, UserB, Range string
+	Cosine              float64
+	Shared              []string
+}
+
 // ProfileAggregates is everything one Profiles() pass produces.
 type ProfileAggregates struct {
 	Summary    []ProfileSummaryRow
@@ -94,4 +103,5 @@ type ProfileAggregates struct {
 	Binge      []ProfileBingeRow
 	Taste      []ProfileTasteRow
 	Baseline   []TasteBaselineRow
+	TagOverlap []ProfileTagOverlapRow
 }

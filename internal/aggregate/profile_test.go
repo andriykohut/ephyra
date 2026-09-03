@@ -55,6 +55,37 @@ func TestProfiles_TagTasteDimension(t *testing.T) {
 	}
 }
 
+func TestProfiles_TagOverlap(t *testing.T) {
+	now := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
+	events := []source.PlaybackEvent{
+		peTags("2025-05-20 20:00", "u1", "m1", "movie", 100, 200, []string{"heist"}),
+		peTags("2025-05-20 20:00", "u2", "m2", "movie", 100, 200, []string{"heist"}),
+		peTags("2025-05-20 20:00", "u3", "m3", "movie", 100, 200, []string{"romance"}),
+		pe("2025-05-20 20:00", "u4", "m4", "movie", 100, 200),
+	}
+	agg := Profiles(events, now)
+
+	get := func(a, b, rng string) (ProfileTagOverlapRow, bool) {
+		for _, r := range agg.TagOverlap {
+			if r.UserA == a && r.UserB == b && r.Range == rng {
+				return r, true
+			}
+		}
+		return ProfileTagOverlapRow{}, false
+	}
+
+	r, ok := get("u1", "u2", "all")
+	if !ok || r.Cosine < 0.999 || len(r.Shared) != 1 || r.Shared[0] != "heist" {
+		t.Fatalf("u1/u2 overlap: %+v ok=%v", r, ok)
+	}
+	if _, ok := get("u1", "u3", "all"); ok {
+		t.Fatalf("u1/u3 share no tags -> cosine 0 -> no row expected")
+	}
+	if _, ok := get("u1", "u4", "all"); ok {
+		t.Fatalf("u4 has no tag vector -> no row expected")
+	}
+}
+
 func findCompletion(rows []ProfileCompletionRow, user, rng, scope, bucket string) int64 {
 	for _, r := range rows {
 		if r.UserID == user && r.Range == rng && r.Scope == scope && r.Bucket == bucket {

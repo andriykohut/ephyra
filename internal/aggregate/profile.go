@@ -1,6 +1,7 @@
 package aggregate
 
 import (
+	"math"
 	"sort"
 	"strconv"
 	"time"
@@ -169,9 +170,95 @@ func Profiles(events []source.PlaybackEvent, now time.Time) ProfileAggregates {
 		out.Binge = append(out.Binge, topBinge(runs)...)
 	}
 	out.Baseline = baselineRows(daily)
+	out.TagOverlap = tagOverlapRows(daily, now)
 
 	sortProfileAggregates(&out)
 	return out
+}
+
+// tagOverlapRows compares each user pair's tag-weight vector (tag -> summed
+// watch seconds, in range) by cosine similarity. Same episode-inherits-series
+// rows as the taste dimension.
+func tagOverlapRows(daily []dailyRow, now time.Time) []ProfileTagOverlapRow {
+	users := distinctUsers(daily) // sorted
+	var out []ProfileTagOverlapRow
+	for _, rng := range profileRangeList {
+		scoped := filterSince(daily, rangeCutoff(rng, now))
+		vec := map[string]map[string]int64{}
+		for _, r := range scoped {
+			for _, tg := range r.tags {
+				m := vec[r.user]
+				if m == nil {
+					m = map[string]int64{}
+					vec[r.user] = m
+				}
+				m[tg] += r.watchedSec
+			}
+		}
+		for i := 0; i < len(users); i++ {
+			for j := i + 1; j < len(users); j++ {
+				va, vb := vec[users[i]], vec[users[j]]
+				if len(va) == 0 || len(vb) == 0 {
+					continue
+				}
+				cos, shared := cosineAndShared(va, vb)
+				if cos == 0 {
+					continue
+				}
+				out = append(out, ProfileTagOverlapRow{
+					UserA: users[i], UserB: users[j], Range: rng, Cosine: cos, Shared: shared,
+				})
+			}
+		}
+	}
+	return out
+}
+
+func cosineAndShared(a, b map[string]int64) (float64, []string) {
+	var dot, na, nb float64
+	var sumA, sumB int64
+	for t, av := range a {
+		na += float64(av) * float64(av)
+		sumA += av
+		if bv, ok := b[t]; ok {
+			dot += float64(av) * float64(bv)
+		}
+	}
+	for _, bv := range b {
+		nb += float64(bv) * float64(bv)
+		sumB += bv
+	}
+	if na == 0 || nb == 0 || dot == 0 {
+		return 0, nil
+	}
+	cos := dot / (math.Sqrt(na) * math.Sqrt(nb))
+
+	type sc struct {
+		tag   string
+		score float64
+	}
+	var xs []sc
+	for t, av := range a {
+		bv, ok := b[t]
+		if !ok {
+			continue
+		}
+		xs = append(xs, sc{t, math.Min(float64(av)/float64(sumA), float64(bv)/float64(sumB))})
+	}
+	sort.Slice(xs, func(i, j int) bool {
+		if xs[i].score != xs[j].score {
+			return xs[i].score > xs[j].score
+		}
+		return xs[i].tag < xs[j].tag
+	})
+	var shared []string
+	for _, x := range xs {
+		shared = append(shared, x.tag)
+		if len(shared) == 8 {
+			break
+		}
+	}
+	return cos, shared
 }
 
 func distinctUsers(rows []dailyRow) []string {
@@ -570,5 +657,16 @@ func sortProfileAggregates(a *ProfileAggregates) {
 			return a.Baseline[i].Dim < a.Baseline[j].Dim
 		}
 		return a.Baseline[i].Key < a.Baseline[j].Key
+	})
+	sort.Slice(a.TagOverlap, func(i, j int) bool {
+		x, y := a.TagOverlap[i], a.TagOverlap[j]
+		switch {
+		case x.UserA != y.UserA:
+			return x.UserA < y.UserA
+		case x.UserB != y.UserB:
+			return x.UserB < y.UserB
+		default:
+			return x.Range < y.Range
+		}
 	})
 }
