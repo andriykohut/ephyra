@@ -76,7 +76,7 @@ type ProfileBingeRow struct {
 }
 
 type ProfileTasteRow struct {
-	UserID, Range, Dim, Key string // Dim: genre|decade|length
+	UserID, Range, Dim, Key string // Dim: genre|decade|length|tag
 	WatchSec, Plays         int64
 }
 

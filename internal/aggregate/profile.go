@@ -40,6 +40,7 @@ type dailyRow struct {
 	user, item, day, scope     string
 	name, seriesID, seriesName string
 	genres                     []string
+	tags                       []string
 	year                       int
 	runtimeSec, watchedSec     int64
 	plays                      int64
@@ -78,7 +79,7 @@ func rollDaily(events []source.PlaybackEvent) []dailyRow {
 			r = &dailyRow{
 				user: k.user, item: k.item, day: k.day, scope: scope,
 				name: e.ItemName, seriesID: e.SeriesID, seriesName: e.SeriesName,
-				genres: e.ItemGenres, year: e.ItemYear, runtimeSec: e.ItemRuntimeSec,
+				genres: e.ItemGenres, tags: e.ItemTags, year: e.ItemYear, runtimeSec: e.ItemRuntimeSec,
 			}
 			m[k] = r
 			order = append(order, k)
@@ -284,6 +285,9 @@ func tasteRows(user, rng string, rows []dailyRow) []ProfileTasteRow {
 		for _, g := range r.genres {
 			add("genre", g, r.watchedSec, r.plays)
 		}
+		for _, tg := range r.tags {
+			add("tag", tg, r.watchedSec, r.plays)
+		}
 		add("decade", decadeKey(r.year), r.watchedSec, r.plays)
 		add("length", lengthBand(r.scope, r.runtimeSec), r.watchedSec, r.plays)
 	}
@@ -477,6 +481,9 @@ func baselineRows(rows []dailyRow) []TasteBaselineRow {
 	for _, r := range rows {
 		for _, g := range r.genres {
 			m[key{"genre", g}] += r.watchedSec
+		}
+		for _, tg := range r.tags {
+			m[key{"tag", tg}] += r.watchedSec
 		}
 		m[key{"decade", decadeKey(r.year)}] += r.watchedSec
 		m[key{"length", lengthBand(r.scope, r.runtimeSec)}] += r.watchedSec

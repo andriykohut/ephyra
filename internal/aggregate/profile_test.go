@@ -15,6 +15,46 @@ func pe(day string, user, item, typ string, dur, runtime int64) source.PlaybackE
 	}
 }
 
+func peTags(day, user, item, typ string, dur, runtime int64, tags []string) source.PlaybackEvent {
+	e := pe(day, user, item, typ, dur, runtime)
+	e.ItemTags = tags
+	return e
+}
+
+func findTaste(rows []ProfileTasteRow, user, rng, dim, key string) (int64, int64) {
+	for _, r := range rows {
+		if r.UserID == user && r.Range == rng && r.Dim == dim && r.Key == key {
+			return r.WatchSec, r.Plays
+		}
+	}
+	return -1, -1
+}
+
+func TestProfiles_TagTasteDimension(t *testing.T) {
+	now := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
+	events := []source.PlaybackEvent{
+		peTags("2025-05-20 20:00", "u1", "m1", "movie", 3000, 6000, []string{"heist", "vault"}),
+		peTags("2025-05-21 20:00", "u1", "e1", "episode", 1200, 1800, []string{"slow burn"}),
+	}
+	agg := Profiles(events, now)
+
+	if ws, plays := findTaste(agg.Taste, "u1", "all", "tag", "heist"); ws != 3000 || plays != 1 {
+		t.Fatalf("tag taste heist: ws=%d plays=%d", ws, plays)
+	}
+	if ws, _ := findTaste(agg.Taste, "u1", "all", "tag", "slow burn"); ws != 1200 {
+		t.Fatalf("episode tag taste: ws=%d", ws)
+	}
+	var baseHeist int64 = -1
+	for _, b := range agg.Baseline {
+		if b.Dim == "tag" && b.Key == "heist" {
+			baseHeist = b.WatchSec
+		}
+	}
+	if baseHeist != 3000 {
+		t.Fatalf("tag baseline heist: %d", baseHeist)
+	}
+}
+
 func findCompletion(rows []ProfileCompletionRow, user, rng, scope, bucket string) int64 {
 	for _, r := range rows {
 		if r.UserID == user && r.Range == rng && r.Scope == scope && r.Bucket == bucket {
