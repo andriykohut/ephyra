@@ -91,6 +91,60 @@ func TestHandleProfile_OK(t *testing.T) {
 	}
 }
 
+func TestHandleProfile_TagsInPayload(t *testing.T) {
+	now := time.Date(2025, 5, 2, 0, 0, 0, 0, time.UTC)
+	s, st, _ := newTestServer(t, now)
+	seedForProfile(t, st, now)
+
+	ctx := context.Background()
+	if err := st.WriteProfileAggregates(ctx, aggregate.ProfileAggregates{
+		Summary: []aggregate.ProfileSummaryRow{{UserID: "u1", Range: "all", Plays: 5, WatchSec: 9000}},
+		Taste: []aggregate.ProfileTasteRow{
+			{UserID: "u1", Range: "all", Dim: "tag", Key: "heist", WatchSec: 8000, Plays: 5},
+			{UserID: "u1", Range: "all", Dim: "tag", Key: "romance", WatchSec: 200, Plays: 2},
+		},
+		Baseline: []aggregate.TasteBaselineRow{
+			{Dim: "tag", Key: "heist", WatchSec: 1000},
+			{Dim: "tag", Key: "romance", WatchSec: 5000},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	rr := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/profile/u1?range=all", nil))
+	if rr.Code != 200 {
+		t.Fatalf("status %d body %s", rr.Code, rr.Body)
+	}
+	var env struct {
+		Data struct {
+			Taste struct {
+				Tag           []struct{ Key string } `json:"tag"`
+				SignatureTags []string               `json:"signature_tags"`
+			} `json:"taste"`
+			Baseline struct {
+				Tag []struct{ Key string } `json:"tag"`
+			} `json:"baseline"`
+			TagOverlap []any `json:"tag_overlap"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &env); err != nil {
+		t.Fatal(err)
+	}
+	if len(env.Data.Taste.Tag) != 2 || env.Data.Taste.Tag[0].Key != "heist" {
+		t.Fatalf("taste.tag: %+v", env.Data.Taste.Tag)
+	}
+	if len(env.Data.Taste.SignatureTags) != 1 || env.Data.Taste.SignatureTags[0] != "heist" {
+		t.Fatalf("signature_tags: %+v", env.Data.Taste.SignatureTags)
+	}
+	if len(env.Data.Baseline.Tag) != 2 {
+		t.Fatalf("baseline.tag: %+v", env.Data.Baseline.Tag)
+	}
+	if env.Data.TagOverlap == nil {
+		t.Fatalf("tag_overlap must serialize as [] not null")
+	}
+}
+
 func TestHandleProfile_BadRange(t *testing.T) {
 	now := time.Date(2025, 5, 2, 0, 0, 0, 0, time.UTC)
 	s, st, _ := newTestServer(t, now)

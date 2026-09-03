@@ -93,12 +93,21 @@ type ProfileTaste struct {
 	Genre           []TasteEntry `json:"genre"`
 	Decade          []TasteEntry `json:"decade"`
 	Length          []TasteEntry `json:"length"`
+	Tag             []TasteEntry `json:"tag"`
 	SignatureGenres []string     `json:"signature_genres"`
+	SignatureTags   []string     `json:"signature_tags"`
 }
 type ProfileBaseline struct {
 	Genre  []BaselineEntry `json:"genre"`
 	Decade []BaselineEntry `json:"decade"`
 	Length []BaselineEntry `json:"length"`
+	Tag    []BaselineEntry `json:"tag"`
+}
+type ProfileTagOverlap struct {
+	User     string   `json:"user"`
+	UserName string   `json:"user_name"`
+	Cosine   float64  `json:"cosine"`
+	Shared   []string `json:"shared"`
 }
 type Profile struct {
 	Range      string                   `json:"range"`
@@ -110,6 +119,7 @@ type Profile struct {
 	Binge      []ProfileBinge           `json:"binge"`
 	Taste      ProfileTaste             `json:"taste"`
 	Baseline   ProfileBaseline          `json:"baseline"`
+	TagOverlap []ProfileTagOverlap      `json:"tag_overlap"`
 }
 
 // ReadProfileList is every user in dim_user with their lifetime headline
@@ -185,7 +195,11 @@ func (s *Store) ReadProfile(ctx context.Context, userID, rng string) (Profile, b
 	if err := s.readProfileTaste(ctx, &out, userID, rng); err != nil {
 		return Profile{}, false, err
 	}
+	if err := s.readProfileTagOverlap(ctx, &out, userID, rng); err != nil {
+		return Profile{}, false, err
+	}
 	out.Taste.SignatureGenres = signatureGenres(out.Taste.Genre, out.Baseline.Genre)
+	out.Taste.SignatureTags = signatureShares(out.Taste.Tag, out.Baseline.Tag, 2, 120)
 
 	out.Completion = orEmpty(out.Completion)
 	out.Abandoned = orEmpty(out.Abandoned)
@@ -194,10 +208,14 @@ func (s *Store) ReadProfile(ctx context.Context, userID, rng string) (Profile, b
 	out.Taste.Genre = orEmpty(out.Taste.Genre)
 	out.Taste.Decade = orEmpty(out.Taste.Decade)
 	out.Taste.Length = orEmpty(out.Taste.Length)
+	out.Taste.Tag = orEmpty(out.Taste.Tag)
 	out.Taste.SignatureGenres = orEmpty(out.Taste.SignatureGenres)
+	out.Taste.SignatureTags = orEmpty(out.Taste.SignatureTags)
 	out.Baseline.Genre = orEmpty(out.Baseline.Genre)
 	out.Baseline.Decade = orEmpty(out.Baseline.Decade)
 	out.Baseline.Length = orEmpty(out.Baseline.Length)
+	out.Baseline.Tag = orEmpty(out.Baseline.Tag)
+	out.TagOverlap = orEmpty(out.TagOverlap)
 	return out, true, nil
 }
 
@@ -325,6 +343,8 @@ func (s *Store) readProfileTaste(ctx context.Context, out *Profile, userID, rng 
 			out.Taste.Decade = append(out.Taste.Decade, e)
 		case "length":
 			out.Taste.Length = append(out.Taste.Length, e)
+		case "tag":
+			out.Taste.Tag = append(out.Taste.Tag, e)
 		}
 	}
 	if err := trows.Err(); err != nil {
@@ -350,19 +370,55 @@ func (s *Store) readProfileTaste(ctx context.Context, out *Profile, userID, rng 
 			out.Baseline.Decade = append(out.Baseline.Decade, e)
 		case "length":
 			out.Baseline.Length = append(out.Baseline.Length, e)
+		case "tag":
+			out.Baseline.Tag = append(out.Baseline.Tag, e)
 		}
 	}
 	return brows.Err()
 }
 
+// readProfileTagOverlap fills out.TagOverlap: this user vs every other user with
+// a stored pair for the range, the other user reported and named.
+func (s *Store) readProfileTagOverlap(ctx context.Context, out *Profile, userID, rng string) error {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT CASE WHEN o.user_a = ? THEN o.user_b ELSE o.user_a END AS other,
+		       COALESCE(d.name, ''), o.cosine, o.shared
+		FROM agg_profile_tag_overlap o
+		LEFT JOIN dim_user d
+		  ON d.id = CASE WHEN o.user_a = ? THEN o.user_b ELSE o.user_a END
+		WHERE (o.user_a = ? OR o.user_b = ?) AND o.range = ?
+		ORDER BY o.cosine DESC, other`, userID, userID, userID, userID, rng)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var e ProfileTagOverlap
+		var shared string
+		if err := rows.Scan(&e.User, &e.UserName, &e.Cosine, &shared); err != nil {
+			return err
+		}
+		e.Shared = splitGenres(shared) // pipe-split; splitGenres handles ""
+		out.TagOverlap = append(out.TagOverlap, e)
+	}
+	return rows.Err()
+}
+
 // signatureGenres picks up to three genres where the user's watch-time share
 // most exceeds the library baseline's share.
 func signatureGenres(userGenre []TasteEntry, baseGenre []BaselineEntry) []string {
+	return signatureShares(userGenre, baseGenre, 0, 0)
+}
+
+// signatureShares picks up to three keys where the user's watch-time share most
+// exceeds the baseline share. minPlays / minSec drop keys with too little
+// support to be called a signature.
+func signatureShares(user []TasteEntry, base []BaselineEntry, minPlays, minSec int64) []string {
 	var userTotal, baseTotal int64
-	for _, g := range userGenre {
+	for _, g := range user {
 		userTotal += g.WatchSec
 	}
-	for _, g := range baseGenre {
+	for _, g := range base {
 		baseTotal += g.WatchSec
 	}
 	if userTotal == 0 {
@@ -370,7 +426,7 @@ func signatureGenres(userGenre []TasteEntry, baseGenre []BaselineEntry) []string
 	}
 	baseShare := map[string]float64{}
 	if baseTotal > 0 {
-		for _, g := range baseGenre {
+		for _, g := range base {
 			baseShare[g.Key] = float64(g.WatchSec) / float64(baseTotal)
 		}
 	}
@@ -381,7 +437,10 @@ func signatureGenres(userGenre []TasteEntry, baseGenre []BaselineEntry) []string
 		share float64
 	}
 	var xs []scored
-	for _, g := range userGenre {
+	for _, g := range user {
+		if g.Plays < minPlays || g.WatchSec < minSec {
+			continue
+		}
 		us := float64(g.WatchSec) / float64(userTotal)
 		xs = append(xs, scored{key: g.Key, delta: us - baseShare[g.Key], share: us})
 	}

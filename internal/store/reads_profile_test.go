@@ -95,6 +95,58 @@ func TestReadProfile_RangeScopedPlusLifetime(t *testing.T) {
 	}
 }
 
+func TestReadProfile_TagsAndOverlap(t *testing.T) {
+	ctx := context.Background()
+	st := openStore(t)
+
+	if _, err := st.DB().ExecContext(ctx,
+		`INSERT INTO dim_user (id, name) VALUES ('u1','alice'), ('u2','bob')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetRefreshMeta(ctx, RefreshMeta{Job: "watch", OK: true, PluginAvailable: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.WriteProfileAggregates(ctx, aggregate.ProfileAggregates{
+		Summary: []aggregate.ProfileSummaryRow{{UserID: "u1", Range: "all", Plays: 5, WatchSec: 9000}},
+		Taste: []aggregate.ProfileTasteRow{
+			{UserID: "u1", Range: "all", Dim: "tag", Key: "heist", WatchSec: 8000, Plays: 5},
+			{UserID: "u1", Range: "all", Dim: "tag", Key: "cameo", WatchSec: 30, Plays: 1},
+		},
+		Baseline: []aggregate.TasteBaselineRow{
+			{Dim: "tag", Key: "heist", WatchSec: 1000},
+			{Dim: "tag", Key: "cameo", WatchSec: 1000},
+		},
+		TagOverlap: []aggregate.ProfileTagOverlapRow{
+			{UserA: "u1", UserB: "u2", Range: "all", Cosine: 0.5, Shared: []string{"heist"}},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	p, ok, err := st.ReadProfile(ctx, "u1", "all")
+	if err != nil || !ok {
+		t.Fatalf("read: ok=%v err=%v", ok, err)
+	}
+	if len(p.Taste.Tag) == 0 || p.Taste.Tag[0].Key != "heist" {
+		t.Fatalf("taste.tag: %+v", p.Taste.Tag)
+	}
+	if len(p.Taste.SignatureTags) != 1 || p.Taste.SignatureTags[0] != "heist" {
+		t.Fatalf("signature_tags (cameo should be below the floor): %+v", p.Taste.SignatureTags)
+	}
+	if len(p.TagOverlap) != 1 || p.TagOverlap[0].User != "u2" || p.TagOverlap[0].UserName != "bob" ||
+		len(p.TagOverlap[0].Shared) != 1 || p.TagOverlap[0].Shared[0] != "heist" {
+		t.Fatalf("tag_overlap: %+v", p.TagOverlap)
+	}
+
+	p2, _, _ := st.ReadProfile(ctx, "u2", "all")
+	if p2.TagOverlap == nil {
+		t.Fatalf("tag_overlap must be [] not nil")
+	}
+	if len(p2.TagOverlap) != 1 || p2.TagOverlap[0].User != "u1" {
+		t.Fatalf("same pair surfaced from u2's side: %+v", p2.TagOverlap)
+	}
+}
+
 func TestReadProfile_UnknownUser(t *testing.T) {
 	ctx := context.Background()
 	st := openStore(t)
