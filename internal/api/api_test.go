@@ -163,6 +163,40 @@ func TestLibraryOverview_EmptyListsSerializeAsArrays(t *testing.T) {
 	}
 }
 
+func TestLibraryOverview_TagsInPayload(t *testing.T) {
+	now := time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)
+	s, st, _ := newTestServer(t, now)
+	ctx := context.Background()
+	if err := st.WriteLibraryAggregates(ctx, sampleAgg(), nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	st.SetRefreshMeta(ctx, store.RefreshMeta{Job: "library", LastRunAt: now.Add(-time.Minute), OK: true})
+
+	rr := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/library/overview", nil))
+	if rr.Code != 200 {
+		t.Fatalf("status %d body %s", rr.Code, rr.Body)
+	}
+	var env struct {
+		Data struct {
+			Tags struct {
+				Coverage struct{ Tagged, Total int64 } `json:"coverage"`
+				Top      []struct{ Label string }      `json:"top"`
+				Pairs    []struct{ A, B string }       `json:"pairs"`
+			} `json:"tags"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &env); err != nil {
+		t.Fatal(err)
+	}
+	if env.Data.Tags.Coverage.Tagged != 4 || env.Data.Tags.Coverage.Total != 6 {
+		t.Fatalf("coverage: %+v", env.Data.Tags.Coverage)
+	}
+	if len(env.Data.Tags.Top) != 1 || env.Data.Tags.Top[0].Label != "heist" || len(env.Data.Tags.Pairs) != 1 {
+		t.Fatalf("tags payload: %+v", env.Data.Tags)
+	}
+}
+
 func TestUnknownAPIPathIs404JSON(t *testing.T) {
 	s, _, _ := newTestServer(t, time.Now())
 	rr := httptest.NewRecorder()

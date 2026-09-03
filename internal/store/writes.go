@@ -21,8 +21,9 @@ func (s *Store) WriteLibraryAggregates(ctx context.Context, a aggregate.LibraryA
 	for _, q := range []string{
 		`DELETE FROM agg_totals`,
 		`DELETE FROM agg_disk`,
-		`DELETE FROM agg_distribution WHERE dimension IN ('genre','decade','library_items')`,
+		`DELETE FROM agg_distribution WHERE dimension IN ('genre','decade','library_items','tag')`,
 		`DELETE FROM agg_library_growth`,
+		`DELETE FROM agg_library_tag_pairs`,
 		`DELETE FROM agg_cleanup`,
 		`DELETE FROM dim_user`,
 		`DELETE FROM agg_played_core`,
@@ -62,6 +63,7 @@ func (s *Store) WriteLibraryAggregates(ctx context.Context, a aggregate.LibraryA
 		{"genre", a.GenresTop},
 		{"decade", a.ByDecade},
 		{"library_items", a.ItemsByLibrary},
+		{"tag", a.TagsTop},
 	}
 	for _, d := range distros {
 		for _, lc := range d.data {
@@ -77,6 +79,14 @@ func (s *Store) WriteLibraryAggregates(ctx context.Context, a aggregate.LibraryA
 		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO agg_library_growth (month, added_items, added_bytes, cum_items) VALUES (?,?,?,?)`,
 			g.Month, g.AddedItems, g.AddedBytes, g.CumItems); err != nil {
+			return err
+		}
+	}
+
+	for _, p := range a.TagPairs {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO agg_library_tag_pairs (tag_a, tag_b, items) VALUES (?,?,?)`,
+			p.A, p.B, p.Items); err != nil {
 			return err
 		}
 	}

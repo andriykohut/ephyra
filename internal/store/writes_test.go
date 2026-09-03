@@ -13,6 +13,7 @@ func sampleAggregates() aggregate.LibraryAggregates {
 			"items.total": 6, "items.Movie": 4, "items.Episode": 2, "items.Series": 3,
 			"runtime_sec.total": 33600, "bytes.total": 29_500_000_000,
 			"count.uhd": 2, "count.hdr": 3, "count.dv": 1,
+			"tags.tagged_items": 4, "tags.total_items": 6,
 		},
 		ItemsByLibrary: []aggregate.LabeledCount{{Label: "Movies", Count: 4}, {Label: "Shows", Count: 2}},
 		DiskByResolution: []aggregate.DiskBucket{
@@ -26,7 +27,10 @@ func sampleAggregates() aggregate.LibraryAggregates {
 			{Bucket: "Movies", Bytes: 27_000_000_000, Items: 4},
 			{Bucket: "Shows", Bytes: 2_500_000_000, Items: 2},
 		},
-		GenresTop: []aggregate.LabeledCount{{Label: "Drama", Count: 4}, {Label: "Comedy", Count: 1}},
+		GenresTop:   []aggregate.LabeledCount{{Label: "Drama", Count: 4}, {Label: "Comedy", Count: 1}},
+		TagsTop:     []aggregate.LabeledCount{{Label: "heist", Count: 4}, {Label: "vault", Count: 3}},
+		TagCoverage: aggregate.TagCoverage{ItemsTagged: 4, ItemsTotal: 6},
+		TagPairs:    []aggregate.TagPair{{A: "heist", B: "vault", Items: 3}},
 		ByDecade: []aggregate.LabeledCount{
 			{Label: "1990s", Count: 1}, {Label: "2000s", Count: 1},
 			{Label: "2010s", Count: 3}, {Label: "2020s", Count: 1},
@@ -71,6 +75,15 @@ func TestWriteThenReadLibraryOverview(t *testing.T) {
 	if len(ov.GenresTop) != 2 || ov.GenresTop[0].Label != "Drama" {
 		t.Fatalf("genres: %+v", ov.GenresTop)
 	}
+	if ov.Tags.Coverage.Tagged != 4 || ov.Tags.Coverage.Total != 6 {
+		t.Fatalf("tag coverage: %+v", ov.Tags.Coverage)
+	}
+	if len(ov.Tags.Top) == 0 || ov.Tags.Top[0].Label != "heist" {
+		t.Fatalf("tag top: %+v", ov.Tags.Top)
+	}
+	if len(ov.Tags.Pairs) != 1 || ov.Tags.Pairs[0].A != "heist" || ov.Tags.Pairs[0].B != "vault" || ov.Tags.Pairs[0].Items != 3 {
+		t.Fatalf("tag pairs: %+v", ov.Tags.Pairs)
+	}
 
 	repl := sampleAggregates()
 	repl.Totals["bytes.total"] = 1
@@ -81,6 +94,30 @@ func TestWriteThenReadLibraryOverview(t *testing.T) {
 	ov, _ = s.ReadLibraryOverview(ctx)
 	if ov.Totals.Bytes != 1 || len(ov.Growth) != 1 || ov.Growth[0].Month != "2024-05" {
 		t.Fatalf("replace failed: %+v", ov)
+	}
+}
+
+func TestReadLibraryOverview_TagsEmpty(t *testing.T) {
+	ctx := context.Background()
+	s, err := Open(ctx, t.TempDir()+"/s.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	if err := s.WriteLibraryAggregates(ctx,
+		aggregate.LibraryAggregates{Totals: map[string]float64{}}, nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	ov, err := s.ReadLibraryOverview(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ov.Tags.Coverage.Tagged != 0 || ov.Tags.Coverage.Total != 0 {
+		t.Fatalf("empty coverage: %+v", ov.Tags.Coverage)
+	}
+	if ov.Tags.Top == nil || ov.Tags.Pairs == nil {
+		t.Fatalf("empty slices must be non-nil for []-serialization: %+v", ov.Tags)
 	}
 }
 

@@ -18,6 +18,12 @@ func orEmpty[T any](s []T) []T {
 	return s
 }
 
+type TagPairDTO struct {
+	A     string `json:"a"`
+	B     string `json:"b"`
+	Items int64  `json:"items"`
+}
+
 // LibraryOverview is the shape GET /api/library/overview returns (under "data").
 type LibraryOverview struct {
 	Totals struct {
@@ -37,6 +43,14 @@ type LibraryOverview struct {
 	GenresTop        []aggregate.LabeledCount `json:"genres_top"`
 	ByDecade         []aggregate.LabeledCount `json:"by_decade"`
 	Growth           []aggregate.GrowthPoint  `json:"growth"`
+	Tags             struct {
+		Coverage struct {
+			Tagged int64 `json:"tagged"`
+			Total  int64 `json:"total"`
+		} `json:"coverage"`
+		Top   []aggregate.LabeledCount `json:"top"`
+		Pairs []TagPairDTO             `json:"pairs"`
+	} `json:"tags"`
 }
 
 func (s *Store) ReadLibraryOverview(ctx context.Context) (LibraryOverview, error) {
@@ -64,6 +78,8 @@ func (s *Store) ReadLibraryOverview(ctx context.Context) (LibraryOverview, error
 	ov.Totals.CountDV = int64(totals["count.dv"])
 	ov.Totals.Series = int64(totals["items.Series"])
 	ov.Totals.Items = int64(totals["items.total"])
+	ov.Tags.Coverage.Tagged = int64(totals["tags.tagged_items"])
+	ov.Tags.Coverage.Total = int64(totals["tags.total_items"])
 
 	if ov.DiskByResolution, err = s.readDisk(ctx, "resolution"); err != nil {
 		return ov, err
@@ -85,6 +101,12 @@ func (s *Store) ReadLibraryOverview(ctx context.Context) (LibraryOverview, error
 		return ov, err
 	}
 	if ov.Totals.ItemsByLibrary, err = s.readDistro(ctx, "library_items", false); err != nil {
+		return ov, err
+	}
+	if ov.Tags.Top, err = s.readDistro(ctx, "tag", false); err != nil {
+		return ov, err
+	}
+	if ov.Tags.Pairs, err = s.readTagPairs(ctx); err != nil {
 		return ov, err
 	}
 
@@ -113,7 +135,27 @@ func (s *Store) ReadLibraryOverview(ctx context.Context) (LibraryOverview, error
 	ov.GenresTop = orEmpty(ov.GenresTop)
 	ov.ByDecade = orEmpty(ov.ByDecade)
 	ov.Growth = orEmpty(ov.Growth)
+	ov.Tags.Top = orEmpty(ov.Tags.Top)
+	ov.Tags.Pairs = orEmpty(ov.Tags.Pairs)
 	return ov, nil
+}
+
+func (s *Store) readTagPairs(ctx context.Context) ([]TagPairDTO, error) {
+	r, err := s.db.QueryContext(ctx,
+		`SELECT tag_a, tag_b, items FROM agg_library_tag_pairs ORDER BY items DESC, tag_a, tag_b`)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	var out []TagPairDTO
+	for r.Next() {
+		var p TagPairDTO
+		if err := r.Scan(&p.A, &p.B, &p.Items); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, r.Err()
 }
 
 func (s *Store) readDisk(ctx context.Context, dim string) ([]aggregate.DiskBucket, error) {
