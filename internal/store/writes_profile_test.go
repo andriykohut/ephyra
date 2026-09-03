@@ -37,3 +37,52 @@ func TestWriteProfileAggregates_RewriteSemantics(t *testing.T) {
 		t.Fatalf("rewrite not clean: plays=%d comp=%d base=%d", plays, comp, base)
 	}
 }
+
+func TestWriteProfile_TagOverlapAndTagTaste(t *testing.T) {
+	ctx := context.Background()
+	st := openStore(t)
+
+	err := st.WriteProfileAggregates(ctx, aggregate.ProfileAggregates{
+		Taste: []aggregate.ProfileTasteRow{
+			{UserID: "u1", Range: "all", Dim: "tag", Key: "heist", WatchSec: 3000, Plays: 2},
+		},
+		Baseline: []aggregate.TasteBaselineRow{
+			{Dim: "tag", Key: "heist", WatchSec: 3000},
+		},
+		TagOverlap: []aggregate.ProfileTagOverlapRow{
+			{UserA: "u1", UserB: "u2", Range: "all", Cosine: 0.62, Shared: []string{"heist", "vault"}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var dim, key string
+	var ws int64
+	if err := st.DB().QueryRowContext(ctx,
+		`SELECT dim, key, watch_sec FROM agg_profile_taste WHERE dim='tag'`).Scan(&dim, &key, &ws); err != nil {
+		t.Fatal(err)
+	}
+	if key != "heist" || ws != 3000 {
+		t.Fatalf("tag taste row: %s %d", key, ws)
+	}
+
+	var ua, ub, shared string
+	var cos float64
+	if err := st.DB().QueryRowContext(ctx,
+		`SELECT user_a, user_b, cosine, shared FROM agg_profile_tag_overlap`).Scan(&ua, &ub, &cos, &shared); err != nil {
+		t.Fatal(err)
+	}
+	if ua != "u1" || ub != "u2" || cos < 0.61 || shared != "heist|vault" {
+		t.Fatalf("overlap row: %s %s %v %q", ua, ub, cos, shared)
+	}
+
+	if err := st.WriteProfileAggregates(ctx, aggregate.ProfileAggregates{}); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	st.DB().QueryRowContext(ctx, `SELECT count(*) FROM agg_profile_tag_overlap`).Scan(&n)
+	if n != 0 {
+		t.Fatalf("expected wipe, got %d rows", n)
+	}
+}

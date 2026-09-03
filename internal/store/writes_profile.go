@@ -23,6 +23,7 @@ func (s *Store) WriteProfileAggregates(ctx context.Context, a aggregate.ProfileA
 		`DELETE FROM agg_profile_binge`,
 		`DELETE FROM agg_profile_taste`,
 		`DELETE FROM agg_taste_baseline`,
+		`DELETE FROM agg_profile_tag_overlap`,
 	} {
 		if _, err := tx.ExecContext(ctx, q); err != nil {
 			return err
@@ -97,6 +98,15 @@ func (s *Store) WriteProfileAggregates(ctx context.Context, a aggregate.ProfileA
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO agg_taste_baseline (dim, key, watch_sec) VALUES (?,?,?)`,
 			r.Dim, r.Key, r.WatchSec,
+		); err != nil {
+			return err
+		}
+	}
+	for _, r := range a.TagOverlap {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO agg_profile_tag_overlap (user_a, user_b, range, cosine, shared)
+			VALUES (?,?,?,?,?)`,
+			r.UserA, r.UserB, r.Range, r.Cosine, joinTags(r.Shared),
 		); err != nil {
 			return err
 		}
