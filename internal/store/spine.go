@@ -19,6 +19,14 @@ func splitGenres(s string) []string {
 	return strings.Split(s, "|")
 }
 
+func joinTags(ts []string) string { return strings.Join(ts, "|") }
+func splitTags(s string) []string {
+	if s == "" {
+		return nil
+	}
+	return strings.Split(s, "|")
+}
+
 // spineTimeLayout is how playback_events.at is stored: the plugin's wall-clock
 // components, no zone. Kept parseable so ReadPlaybackEvents can hand aggregate
 // a time.Time whose literal fields match what the plugin wrote.
@@ -64,20 +72,21 @@ func (s *Store) AppendPlaybackEvents(ctx context.Context, evs []source.PlaybackE
 	const q = `
 		INSERT INTO playback_events
 		  (at, user_id, item_id, item_type, method, play_duration_sec,
-		   item_name, series_id, series_name, item_runtime_sec, item_year, item_genres, dedup_hash)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+		   item_name, series_id, series_name, item_runtime_sec, item_year, item_genres, item_tags, dedup_hash)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(dedup_hash) DO UPDATE SET
 		  item_name        = excluded.item_name,
 		  series_id        = excluded.series_id,
 		  series_name      = excluded.series_name,
 		  item_runtime_sec = excluded.item_runtime_sec,
 		  item_year        = excluded.item_year,
-		  item_genres      = excluded.item_genres`
+		  item_genres      = excluded.item_genres,
+		  item_tags        = excluded.item_tags`
 	for _, e := range evs {
 		if _, err := tx.ExecContext(ctx, q,
 			formatSpineTime(e.At), e.UserID, e.ItemID, e.ItemType, e.Method, e.PlayDurationSec,
 			e.ItemName, e.SeriesID, e.SeriesName,
-			e.ItemRuntimeSec, e.ItemYear, joinGenres(e.ItemGenres), spineDedupHash(e),
+			e.ItemRuntimeSec, e.ItemYear, joinGenres(e.ItemGenres), joinTags(e.ItemTags), spineDedupHash(e),
 		); err != nil {
 			return err
 		}
@@ -91,7 +100,7 @@ func (s *Store) AppendPlaybackEvents(ctx context.Context, evs []source.PlaybackE
 func (s *Store) ReadPlaybackEvents(ctx context.Context) ([]source.PlaybackEvent, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT at, user_id, item_id, item_type, method, play_duration_sec,
-		       item_name, series_id, series_name, item_runtime_sec, item_year, item_genres
+		       item_name, series_id, series_name, item_runtime_sec, item_year, item_genres, item_tags
 		FROM playback_events ORDER BY at`)
 	if err != nil {
 		return nil, err
@@ -101,14 +110,15 @@ func (s *Store) ReadPlaybackEvents(ctx context.Context) ([]source.PlaybackEvent,
 	var out []source.PlaybackEvent
 	for rows.Next() {
 		var e source.PlaybackEvent
-		var atRaw, genres string
+		var atRaw, genres, tags string
 		if err := rows.Scan(&atRaw, &e.UserID, &e.ItemID, &e.ItemType, &e.Method,
 			&e.PlayDurationSec, &e.ItemName, &e.SeriesID, &e.SeriesName,
-			&e.ItemRuntimeSec, &e.ItemYear, &genres); err != nil {
+			&e.ItemRuntimeSec, &e.ItemYear, &genres, &tags); err != nil {
 			return nil, err
 		}
 		e.At = parseSpineTime(atRaw)
 		e.ItemGenres = splitGenres(genres)
+		e.ItemTags = splitTags(tags)
 		out = append(out, e)
 	}
 	return out, rows.Err()

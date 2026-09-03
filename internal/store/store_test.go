@@ -18,8 +18,8 @@ func TestOpenAppliesMigrationsIdempotently(t *testing.T) {
 	if err := s1.DB().QueryRowContext(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
-	if n != 3 {
-		t.Fatalf("want 3 applied migrations, got %d", n)
+	if n != 4 {
+		t.Fatalf("want 4 applied migrations, got %d", n)
 	}
 	if err := s1.Close(); err != nil {
 		t.Fatal(err)
@@ -107,8 +107,8 @@ func TestMigration0002Redefinitions(t *testing.T) {
 	if err := s.DB().QueryRowContext(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
-	if n != 3 {
-		t.Fatalf("want 3 migrations applied, got %d", n)
+	if n != 4 {
+		t.Fatalf("want 4 migrations applied, got %d", n)
 	}
 }
 
@@ -138,8 +138,8 @@ func TestMigrate_0003_ProfileTables(t *testing.T) {
 	if err := st.DB().QueryRow(`SELECT MAX(version) FROM schema_migrations`).Scan(&v); err != nil {
 		t.Fatal(err)
 	}
-	if v != 3 {
-		t.Fatalf("schema_migrations max version = %d, want 3", v)
+	if v != 4 {
+		t.Fatalf("schema_migrations max version = %d, want 4", v)
 	}
 
 	var idx int

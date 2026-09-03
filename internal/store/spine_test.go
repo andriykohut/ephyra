@@ -94,6 +94,36 @@ func TestReadPlaybackEvents_RoundTripOrdered(t *testing.T) {
 	}
 }
 
+func TestSpine_ItemTagsRoundTripAndRefresh(t *testing.T) {
+	ctx := context.Background()
+	st := openStore(t)
+
+	e := source.PlaybackEvent{
+		At: time.Date(2025, 1, 6, 20, 10, 0, 0, time.UTC),
+		UserID: "u1", ItemID: "i1", ItemType: "movie", Method: "DirectPlay",
+		PlayDurationSec: 3600, ItemTags: []string{"heist", "vault"},
+	}
+	if err := st.AppendPlaybackEvents(ctx, []source.PlaybackEvent{e}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.ReadPlaybackEvents(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || len(got[0].ItemTags) != 2 || got[0].ItemTags[0] != "heist" || got[0].ItemTags[1] != "vault" {
+		t.Fatalf("tags round-trip: %+v", got)
+	}
+
+	e.ItemTags = []string{"heist", "vault", "dystopia"}
+	if err := st.AppendPlaybackEvents(ctx, []source.PlaybackEvent{e}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = st.ReadPlaybackEvents(ctx)
+	if len(got) != 1 || len(got[0].ItemTags) != 3 {
+		t.Fatalf("tags refresh-on-conflict: %+v", got)
+	}
+}
+
 func TestSpineCoverage(t *testing.T) {
 	ctx := context.Background()
 	st := openStore(t)
