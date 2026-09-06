@@ -53,6 +53,31 @@ type LibraryOverview struct {
 	} `json:"tags"`
 }
 
+// ReadLibraries returns every known library name, sorted by item count desc
+// then name — "Unknown" included if any item resolved to it. Backs the
+// filter dropdown on every library-aware page.
+func (s *Store) ReadLibraries(ctx context.Context) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT d.name, COALESCE(t.items, 0) AS items
+		FROM dim_library d
+		LEFT JOIN agg_distribution t ON t.library = '' AND t.dimension = 'library_items' AND t.bucket = d.name
+		ORDER BY items DESC, d.name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var name string
+		var items int64
+		if err := rows.Scan(&name, &items); err != nil {
+			return nil, err
+		}
+		out = append(out, name)
+	}
+	return orEmpty(out), rows.Err()
+}
+
 func (s *Store) ReadLibraryOverview(ctx context.Context, library string) (LibraryOverview, error) {
 	var ov LibraryOverview
 

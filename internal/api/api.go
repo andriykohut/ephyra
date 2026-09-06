@@ -49,6 +49,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 	mux.HandleFunc("GET /api/library/overview", s.handleLibraryOverview)
+	mux.HandleFunc("GET /api/libraries", s.handleLibraries)
 	mux.HandleFunc("GET /api/watch/stats", s.handleWatchStats)
 	mux.HandleFunc("GET /api/profile", s.handleProfileList)
 	mux.HandleFunc("GET /api/profile/{userID}", s.handleProfile)
