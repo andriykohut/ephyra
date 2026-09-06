@@ -234,3 +234,46 @@ func TestProfiles_RangeFiltering(t *testing.T) {
 		t.Fatalf("all finished = %d, want 2", got)
 	}
 }
+
+func TestFilterEventsByLibrary(t *testing.T) {
+	events := []source.PlaybackEvent{
+		{UserID: "u1", ItemID: "m1", Library: "Movies"},
+		{UserID: "u1", ItemID: "e1", Library: "Shows"},
+		{UserID: "u2", ItemID: "m2", Library: "Movies"},
+	}
+	all := FilterEventsByLibrary(events, "")
+	if len(all) != 3 {
+		t.Fatalf("empty filter should return everything, got %d", len(all))
+	}
+	movies := FilterEventsByLibrary(events, "Movies")
+	if len(movies) != 2 {
+		t.Fatalf("movies: %d", len(movies))
+	}
+}
+
+func TestDistinctEventLibraries(t *testing.T) {
+	events := []source.PlaybackEvent{
+		{Library: "Movies"}, {Library: "Shows"}, {Library: "Movies"},
+	}
+	got := DistinctEventLibraries(events)
+	if len(got) != 2 {
+		t.Fatalf("got %v", got)
+	}
+}
+
+func TestProfiles_LibraryFilterExcludesUsersWithNoHistoryThere(t *testing.T) {
+	now := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
+	events := []source.PlaybackEvent{
+		{At: now.AddDate(0, 0, -1), UserID: "u1", ItemID: "m1", ItemType: "movie",
+			PlayDurationSec: 600, ItemRuntimeSec: 6000, Library: "Movies"},
+	}
+	full := Profiles(events, now)
+	if len(full.Summary) == 0 {
+		t.Fatal("expected summary rows for u1 in the unfiltered call")
+	}
+
+	filtered := Profiles(FilterEventsByLibrary(events, "Shows"), now)
+	if len(filtered.Summary) != 0 {
+		t.Fatalf("u1 has no Shows history, expected no summary rows, got %+v", filtered.Summary)
+	}
+}

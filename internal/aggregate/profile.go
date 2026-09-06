@@ -20,6 +20,37 @@ const (
 
 var profileRangeList = []string{"30d", "90d", "1y", "all"}
 
+// FilterEventsByLibrary returns only the events whose Library matches lib.
+// lib == "" returns events unchanged (the "All libraries" scope). Used by the
+// scheduler to compute a per-library ProfileAggregates by calling the
+// unmodified Profiles() function once per library.
+func FilterEventsByLibrary(events []source.PlaybackEvent, lib string) []source.PlaybackEvent {
+	if lib == "" {
+		return events
+	}
+	var out []source.PlaybackEvent
+	for _, e := range events {
+		if e.Library == lib {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// DistinctEventLibraries returns the unique Library values across events, in
+// no particular order.
+func DistinctEventLibraries(events []source.PlaybackEvent) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, e := range events {
+		if !seen[e.Library] {
+			seen[e.Library] = true
+			out = append(out, e.Library)
+		}
+	}
+	return out
+}
+
 // rangeCutoff is the inclusive lower bound (YYYY-MM-DD) for a range, or "" for
 // "all". Same shape as store.dayCutoff so the two stay in step.
 func rangeCutoff(rng string, now time.Time) string {
