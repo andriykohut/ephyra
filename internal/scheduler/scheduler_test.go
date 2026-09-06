@@ -23,7 +23,8 @@ type fakeSource struct {
 	events       []source.PlaybackEvent
 	pluginAbsent bool
 
-	resolved map[string]string // itemID -> library, backs ResolveLibraries
+	resolved   map[string]string // itemID -> library, backs ResolveLibraries
+	resolveErr error             // if set, ResolveLibraries returns this instead
 }
 
 func (f *fakeSource) Kind() string { return "fake" }
@@ -31,8 +32,12 @@ func (f *fakeSource) Kind() string { return "fake" }
 // ResolveLibraries implements source.LibraryResolver so scheduler tests can
 // exercise the one-time backfill wiring without a real jellyfin.db. Ids not
 // present in resolved are simply absent from the result, like the real
-// FileSource does for items no longer in BaseItems.
+// FileSource does for items no longer in BaseItems. If resolveErr is set, it
+// is returned instead — used to exercise the backfill's non-fatal error path.
 func (f *fakeSource) ResolveLibraries(_ context.Context, itemIDs []string) (map[string]string, error) {
+	if f.resolveErr != nil {
+		return nil, f.resolveErr
+	}
 	out := map[string]string{}
 	for _, id := range itemIDs {
 		if lib, ok := f.resolved[id]; ok {
@@ -357,6 +362,33 @@ func TestRunWatchOnce_BackfillsUnknownLibrary(t *testing.T) {
 		if e.ItemID == "m1" && e.Library != "Movies" {
 			t.Errorf("m1 library not backfilled by resolver: %q", e.Library)
 		}
+	}
+}
+
+func TestRunWatchOnce_LibraryBackfillErrorIsNonFatal(t *testing.T) {
+	ctx := context.Background()
+	sc, fs, st := newSched(t)
+
+	fs.events = []source.PlaybackEvent{
+		{At: time.Date(2025, 1, 6, 20, 0, 0, 0, time.UTC), UserID: "u1", ItemID: "m1", ItemType: "movie", Method: "DirectPlay", PlayDurationSec: 3600, Library: "Unknown"},
+	}
+	fs.resolveErr = errors.New("jellyfin.db unreachable")
+
+	if err := sc.RunWatchOnce(ctx); err != nil {
+		t.Fatalf("resolver error should not fail the watch run: %v", err)
+	}
+	m, ok, _ := st.GetRefreshMeta(ctx, "watch")
+	if !ok || !m.OK {
+		t.Fatalf("watch meta should still record ok=true: %+v ok=%v", m, ok)
+	}
+
+	// The row should still be Unknown (unresolved), ready to retry next run.
+	unknown, err := st.ItemsWithUnknownLibrary(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(unknown) != 1 || unknown[0] != "m1" {
+		t.Fatalf("unknown = %v, want [m1] left for the next run's retry", unknown)
 	}
 }
 
