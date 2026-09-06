@@ -18,8 +18,8 @@ func TestOpenAppliesMigrationsIdempotently(t *testing.T) {
 	if err := s1.DB().QueryRowContext(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
-	if n != 4 {
-		t.Fatalf("want 4 applied migrations, got %d", n)
+	if n != 5 {
+		t.Fatalf("want 5 applied migrations, got %d", n)
 	}
 	if err := s1.Close(); err != nil {
 		t.Fatal(err)
@@ -107,8 +107,8 @@ func TestMigration0002Redefinitions(t *testing.T) {
 	if err := s.DB().QueryRowContext(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
-	if n != 4 {
-		t.Fatalf("want 4 migrations applied, got %d", n)
+	if n != 5 {
+		t.Fatalf("want 5 migrations applied, got %d", n)
 	}
 }
 
@@ -138,8 +138,8 @@ func TestMigrate_0003_ProfileTables(t *testing.T) {
 	if err := st.DB().QueryRow(`SELECT MAX(version) FROM schema_migrations`).Scan(&v); err != nil {
 		t.Fatal(err)
 	}
-	if v != 4 {
-		t.Fatalf("schema_migrations max version = %d, want 4", v)
+	if v != 5 {
+		t.Fatalf("schema_migrations max version = %d, want 5", v)
 	}
 
 	var idx int
@@ -148,5 +148,42 @@ func TestMigrate_0003_ProfileTables(t *testing.T) {
 	).Scan(&idx)
 	if idx == 0 {
 		t.Fatal("expected a unique index on playback_events.dedup_hash")
+	}
+}
+
+func TestMigrations_ApplyCleanly(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(ctx, t.TempDir()+"/s.db")
+	if err != nil {
+		t.Fatalf("open (runs all migrations): %v", err)
+	}
+	defer st.Close()
+
+	for _, table := range []string{
+		"dim_library", "agg_totals", "agg_disk", "agg_distribution",
+		"agg_library_growth", "agg_library_tag_pairs", "agg_watch_heatmap",
+		"agg_profile_summary", "agg_profile_completion", "agg_profile_abandoned",
+		"agg_profile_rewatch", "agg_profile_binge", "agg_profile_taste",
+		"agg_taste_baseline", "agg_profile_tag_overlap",
+	} {
+		var n int
+		if err := st.DB().QueryRowContext(ctx,
+			`SELECT count(*) FROM sqlite_master WHERE type='table' AND name = ?`, table,
+		).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if n != 1 {
+			t.Errorf("table %s missing after migrations", table)
+		}
+	}
+
+	var col int
+	if err := st.DB().QueryRowContext(ctx,
+		`SELECT count(*) FROM pragma_table_info('playback_events') WHERE name = 'library'`,
+	).Scan(&col); err != nil {
+		t.Fatal(err)
+	}
+	if col != 1 {
+		t.Error("playback_events.library column missing")
 	}
 }
