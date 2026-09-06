@@ -9,10 +9,11 @@ import (
 )
 
 type CleanupParams struct {
-	Mode  string
-	Sort  string
-	Limit int
-	Now   time.Time
+	Mode    string
+	Sort    string
+	Limit   int
+	Library string // "" for all
+	Now     time.Time
 }
 
 type CleanupItem struct {
@@ -34,18 +35,27 @@ type CleanupResult struct {
 	Items            []CleanupItem `json:"items"`
 }
 
-// cleanupWhere returns the SQL predicate + args for a mode. The stale cutoff is
-// now-365d in RFC3339 so it compares lexically against the stored value.
-func cleanupWhere(mode string, now time.Time) (string, []any) {
+// cleanupWhere returns the SQL predicate + args for a mode and an optional
+// library filter. The stale cutoff is now-365d in RFC3339 so it compares
+// lexically against the stored value.
+func cleanupWhere(mode, library string, now time.Time) (string, []any) {
+	var where string
+	var args []any
 	if mode == "stale" {
 		cut := now.AddDate(-1, 0, 0).UTC().Format(time.RFC3339)
-		return `last_played_at IS NOT NULL AND last_played_at < ?`, []any{cut}
+		where, args = `last_played_at IS NOT NULL AND last_played_at < ?`, []any{cut}
+	} else {
+		where, args = `last_played_at IS NULL`, nil
 	}
-	return `last_played_at IS NULL`, nil
+	if library != "" {
+		where += " AND library = ?"
+		args = append(args, library)
+	}
+	return where, args
 }
 
 func (s *Store) ReadCleanup(ctx context.Context, p CleanupParams) (CleanupResult, error) {
-	where, args := cleanupWhere(p.Mode, p.Now)
+	where, args := cleanupWhere(p.Mode, p.Library, p.Now)
 	res := CleanupResult{Mode: p.Mode}
 
 	if err := s.db.QueryRowContext(ctx,
@@ -88,8 +98,8 @@ func (s *Store) ReadCleanup(ctx context.Context, p CleanupParams) (CleanupResult
 }
 
 // StreamCleanupCSV writes all matching rows (no limit) as CSV.
-func (s *Store) StreamCleanupCSV(ctx context.Context, mode string, now time.Time, w io.Writer) error {
-	where, args := cleanupWhere(mode, now)
+func (s *Store) StreamCleanupCSV(ctx context.Context, mode, library string, now time.Time, w io.Writer) error {
+	where, args := cleanupWhere(mode, library, now)
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT item_id, scope, name, library, bytes, episodes, added_at, last_played_at
 		   FROM agg_cleanup WHERE `+where+` ORDER BY bytes DESC, name ASC`, args...)

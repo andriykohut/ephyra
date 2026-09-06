@@ -50,13 +50,13 @@ func (s *Server) handleCleanup(w http.ResponseWriter, r *http.Request) {
 	if q.Get("format") == "csv" {
 		w.Header().Set("Content-Type", "text/csv")
 		w.Header().Set("Content-Disposition", `attachment; filename="ephyra-cleanup-`+mode+`.csv"`)
-		if err := s.st.StreamCleanupCSV(ctx, mode, s.now(), w); err != nil {
+		if err := s.st.StreamCleanupCSV(ctx, mode, "", s.now(), w); err != nil {
 			s.log.Error("cleanup csv", "err", err)
 		}
 		return
 	}
 
-	res, err := s.st.ReadCleanup(ctx, store.CleanupParams{Mode: mode, Sort: sortBy, Limit: limit, Now: s.now()})
+	res, err := s.st.ReadCleanup(ctx, store.CleanupParams{Mode: mode, Sort: sortBy, Limit: limit, Library: "", Now: s.now()})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", err.Error())
 		return
