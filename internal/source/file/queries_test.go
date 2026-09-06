@@ -26,8 +26,8 @@ func TestDefaultQueryLibrary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(snap.Items) != 6 || snap.SeriesCount != 1 {
-		t.Fatalf("items=%d series=%d", len(snap.Items), snap.SeriesCount)
+	if len(snap.Items) != 6 || snap.SeriesCounts["Shows"] != 1 || len(snap.SeriesCounts) != 1 {
+		t.Fatalf("items=%d seriesCounts=%v", len(snap.Items), snap.SeriesCounts)
 	}
 	items := map[string]source.LibraryItem{}
 	libCount := map[string]int{}

@@ -46,7 +46,7 @@ func TestLibraryAggregates_Tags(t *testing.T) {
 func TestLibraryAggregates(t *testing.T) {
 	dv := 8
 	snap := source.LibrarySnapshot{
-		SeriesCount: 3,
+		SeriesCounts: map[string]int{"Shows": 3},
 		Items: []source.LibraryItem{
 			mkItem("Alpha", "movie", 8_000_000_000, 7200, "2024-01-05T10:00:00Z", 1994, []string{"Drama", "Thriller"}, "Movies", "mkv", "hevc", "smpte2084", 3840, true, nil),
 			mkItem("Bravo", "movie", 4_000_000_000, 6000, "2024-01-20T10:00:00Z", 2001, []string{"Comedy"}, "Movies", "mp4", "h264", "bt709", 1920, true, nil),

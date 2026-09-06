@@ -30,6 +30,20 @@ const (
 // e.g. "movies"). When a CollectionFolder shares that name case-insensitively we
 // use its display name ("Movies") instead. AncestorIds would be the "proper"
 // route but it's incomplete in practice.
+
+// foldersCTE resolves each physical root Folder to its display library name,
+// preferring a same-named CollectionFolder's display name when one exists.
+// Shared by libraryQuery and seriesCountQuery.
+const foldersCTE = `
+folders AS (
+  SELECT phys.Id AS fid, COALESCE(coll.Name, phys.Name) AS lib
+  FROM BaseItems phys
+  LEFT JOIN BaseItems coll
+    ON coll.Type = '` + collectionFolderType + `'
+   AND lower(coll.Name) = lower(phys.Name)
+  WHERE phys.Type IN ('` + folderType + `', '` + collectionFolderType + `')
+)`
+
 const libraryQuery = `
 WITH pvs AS (
   SELECT ItemId,
@@ -40,15 +54,7 @@ WITH pvs AS (
          ROW_NUMBER() OVER (PARTITION BY ItemId ORDER BY StreamIndex) AS rn
   FROM MediaStreamInfos
   WHERE StreamType = 1
-),
-folders AS (
-  SELECT phys.Id AS fid, COALESCE(coll.Name, phys.Name) AS lib
-  FROM BaseItems phys
-  LEFT JOIN BaseItems coll
-    ON coll.Type = '` + collectionFolderType + `'
-   AND lower(coll.Name) = lower(phys.Name)
-  WHERE phys.Type IN ('` + folderType + `', '` + collectionFolderType + `')
-)
+),` + foldersCTE + `
 SELECT
   i.Name,
   i.Type,
@@ -68,6 +74,17 @@ LEFT JOIN folders f ON f.fid = i.TopParentId
 WHERE i.Type IN (?, ?)
   AND COALESCE(i.IsVirtualItem, 0) = 0
   AND COALESCE(i.IsFolder, 0) = 0
+`
+
+// seriesCountQuery counts series per library, reusing foldersCTE so the count
+// lands under the same library name as libraryQuery attributes its episodes.
+const seriesCountQuery = `
+WITH ` + foldersCTE + `
+SELECT COALESCE(f.lib, 'Unknown'), count(*)
+FROM BaseItems s
+LEFT JOIN folders f ON f.fid = s.TopParentId
+WHERE s.Type = ? AND COALESCE(s.IsVirtualItem, 0) = 0
+GROUP BY f.lib
 `
 
 // playedStateQuery rolls UserData to one row per item: played by anyone,
@@ -171,9 +188,22 @@ func defaultQueryLibrary(db *sql.DB) (source.LibrarySnapshot, error) {
 		return source.LibrarySnapshot{}, err
 	}
 
-	if err := db.QueryRow(
-		`SELECT count(*) FROM BaseItems WHERE Type = ? AND COALESCE(IsVirtualItem,0)=0`, seriesType,
-	).Scan(&snap.SeriesCount); err != nil {
+	snap.SeriesCounts = map[string]int{}
+	srows, err := db.Query(seriesCountQuery, seriesType)
+	if err != nil {
+		return source.LibrarySnapshot{}, err
+	}
+	for srows.Next() {
+		var lib string
+		var n int
+		if err := srows.Scan(&lib, &n); err != nil {
+			srows.Close()
+			return source.LibrarySnapshot{}, err
+		}
+		snap.SeriesCounts[lib] = n
+	}
+	srows.Close()
+	if err := srows.Err(); err != nil {
 		return source.LibrarySnapshot{}, err
 	}
 	return snap, nil

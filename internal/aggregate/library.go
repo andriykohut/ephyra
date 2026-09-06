@@ -64,11 +64,15 @@ func Library(snap source.LibrarySnapshot, loc *time.Location) LibraryAggregates 
 	if loc == nil {
 		loc = time.UTC
 	}
+	var seriesTotal int
+	for _, n := range snap.SeriesCounts {
+		seriesTotal += n
+	}
 	totals := map[string]float64{
 		"items.total":       0,
 		"items.Movie":       0,
 		"items.Episode":     0,
-		"items.Series":      float64(snap.SeriesCount),
+		"items.Series":      float64(seriesTotal),
 		"runtime_sec.total": 0,
 		"bytes.total":       0,
 		"count.uhd":         0,

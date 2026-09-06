@@ -59,11 +59,11 @@ type UserPlay struct {
 
 // LibrarySnapshot is everything a library refresh pulled from Jellyfin.
 type LibrarySnapshot struct {
-	GeneratedAt time.Time
-	Items       []LibraryItem
-	SeriesCount int
-	Users       []UserRef
-	UserPlays   []UserPlay
+	GeneratedAt  time.Time
+	Items        []LibraryItem
+	SeriesCounts map[string]int // library name -> series count
+	Users        []UserRef
+	UserPlays    []UserPlay
 }
 
 // PlaybackEvent is one row from the Playback Reporting plugin, enriched (where
