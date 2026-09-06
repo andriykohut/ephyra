@@ -199,3 +199,36 @@ func TestPlaybackEvents_PluginAbsent(t *testing.T) {
 		t.Fatalf("want ErrPluginUnavailable, got %v", err)
 	}
 }
+
+func TestPlaybackEvents_Library(t *testing.T) {
+	f := newFS(t, testsupport.TwoDBLayout(t))
+
+	events, err := f.PlaybackEvents(context.Background(), time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var sawMovie, sawEpisode, sawDeleted bool
+	for _, e := range events {
+		switch e.ItemID {
+		case "0000000000000000000000000000000a", "0000000000000000000000000000000b", "0000000000000000000000000000000d":
+			sawMovie = true
+			if e.Library != "Movies" {
+				t.Errorf("item %s library = %q, want Movies", e.ItemID, e.Library)
+			}
+		case "000000000000000000000000000000e1", "000000000000000000000000000000e2":
+			sawEpisode = true
+			if e.Library != "Shows" {
+				t.Errorf("episode %s library = %q, want Shows", e.ItemID, e.Library)
+			}
+		case "deadbeefdeadbeefdeadbeefdeadbeef":
+			sawDeleted = true
+			if e.Library != "Unknown" {
+				t.Errorf("deleted item library = %q, want Unknown", e.Library)
+			}
+		}
+	}
+	if !sawMovie || !sawEpisode || !sawDeleted {
+		t.Fatalf("missing cases: movie=%v episode=%v deleted=%v", sawMovie, sawEpisode, sawDeleted)
+	}
+}

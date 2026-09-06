@@ -83,6 +83,7 @@ type PlaybackEvent struct {
 	ItemGenres     []string // nil when unknown
 	ItemTags       []string // nil when unknown; for episodes these are the parent Series' tags
 	ItemYear       int      // 0 when unknown
+	Library        string   // resolved folder name, or "Unknown" — see LibraryItem.Library
 }
 
 type Source interface {

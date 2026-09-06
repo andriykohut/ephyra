@@ -74,17 +74,20 @@ func enrichPlaybackEvents(jdb *sql.DB, events []source.PlaybackEvent) error {
 	}
 
 	type itemInfo struct {
-		name, seriesID, seriesName, genres, tags string
-		runtimeTicks                             int64
-		year                                     int
+		name, seriesID, seriesName, genres, tags, library string
+		runtimeTicks                                       int64
+		year                                               int
 	}
 	items := map[string]itemInfo{}
 	irows, err := jdb.Query(`
-		SELECT lower(replace(Id,'-','')), COALESCE(Name,''),
-		       lower(replace(COALESCE(SeriesId,''),'-','')), COALESCE(SeriesName,''),
-		       COALESCE(RunTimeTicks,0), COALESCE(ProductionYear,0), COALESCE(Genres,''), COALESCE(Tags,'')
-		FROM BaseItems
-		WHERE Type IN ('` + movieType + `', '` + episodeType + `')`)
+		WITH ` + foldersCTE + `
+		SELECT lower(replace(i.Id,'-','')), COALESCE(i.Name,''),
+		       lower(replace(COALESCE(i.SeriesId,''),'-','')), COALESCE(i.SeriesName,''),
+		       COALESCE(i.RunTimeTicks,0), COALESCE(i.ProductionYear,0), COALESCE(i.Genres,''), COALESCE(i.Tags,''),
+		       COALESCE(f.lib, 'Unknown')
+		FROM BaseItems i
+		LEFT JOIN folders f ON f.fid = i.TopParentId
+		WHERE i.Type IN ('` + movieType + `', '` + episodeType + `')`)
 	if err != nil {
 		return err
 	}
@@ -92,7 +95,7 @@ func enrichPlaybackEvents(jdb *sql.DB, events []source.PlaybackEvent) error {
 		var id string
 		var info itemInfo
 		if err := irows.Scan(&id, &info.name, &info.seriesID, &info.seriesName,
-			&info.runtimeTicks, &info.year, &info.genres, &info.tags); err != nil {
+			&info.runtimeTicks, &info.year, &info.genres, &info.tags, &info.library); err != nil {
 			irows.Close()
 			return err
 		}
@@ -123,6 +126,7 @@ func enrichPlaybackEvents(jdb *sql.DB, events []source.PlaybackEvent) error {
 	}
 
 	for i := range events {
+		events[i].Library = "Unknown"
 		if n, ok := users[events[i].UserID]; ok {
 			events[i].UserName = n
 		}
@@ -135,6 +139,7 @@ func enrichPlaybackEvents(jdb *sql.DB, events []source.PlaybackEvent) error {
 			events[i].ItemRuntimeSec = info.runtimeTicks / 10_000_000 // ticks -> seconds
 			events[i].ItemYear = info.year
 			events[i].ItemGenres = splitGenres(info.genres)
+			events[i].Library = info.library
 			if events[i].ItemType == "episode" {
 				events[i].ItemTags = splitTags(seriesTags[info.seriesID])
 			} else {
