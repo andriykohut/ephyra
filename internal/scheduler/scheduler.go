@@ -165,6 +165,22 @@ func (s *Scheduler) RunWatchOnce(ctx context.Context) error {
 	if err := s.st.AppendPlaybackEvents(ctx, events); err != nil {
 		return s.recordFailure(ctx, "watch", mt, start, err)
 	}
+
+	if resolver, ok := s.src.(source.LibraryResolver); ok {
+		unknown, err := s.st.ItemsWithUnknownLibrary(ctx)
+		if err != nil {
+			return s.recordFailure(ctx, "watch", mt, start, err)
+		}
+		if len(unknown) > 0 {
+			resolved, err := resolver.ResolveLibraries(ctx, unknown)
+			if err != nil {
+				s.log.Warn("library backfill failed, will retry next run", "err", err)
+			} else if err := s.st.UpdatePlaybackLibraries(ctx, resolved); err != nil {
+				return s.recordFailure(ctx, "watch", mt, start, err)
+			}
+		}
+	}
+
 	history, err := s.st.ReadPlaybackEvents(ctx)
 	if err != nil {
 		return s.recordFailure(ctx, "watch", mt, start, err)

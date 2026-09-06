@@ -125,6 +125,47 @@ func (s *Store) ReadPlaybackEvents(ctx context.Context) ([]source.PlaybackEvent,
 	return out, rows.Err()
 }
 
+// ItemsWithUnknownLibrary returns distinct item ids whose spine rows are
+// still at the 'Unknown' library sentinel — candidates for the watch job's
+// one-time backfill pass.
+func (s *Store) ItemsWithUnknownLibrary(ctx context.Context) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT DISTINCT item_id FROM playback_events WHERE library = 'Unknown'`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// UpdatePlaybackLibraries sets library on every spine row for each item id in
+// resolved. One transaction; a no-op for ids not present in resolved.
+func (s *Store) UpdatePlaybackLibraries(ctx context.Context, resolved map[string]string) error {
+	if len(resolved) == 0 {
+		return nil
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for id, lib := range resolved {
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE playback_events SET library = ? WHERE item_id = ?`, lib, id); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 // SpineCoverage is the min/max play date and total row count, for the API
 // coverage block. Dates are YYYY-MM-DD; empty strings when the spine is empty.
 func (s *Store) SpineCoverage(ctx context.Context) (first, last string, total int64, err error) {

@@ -22,9 +22,25 @@ type fakeSource struct {
 
 	events       []source.PlaybackEvent
 	pluginAbsent bool
+
+	resolved map[string]string // itemID -> library, backs ResolveLibraries
 }
 
 func (f *fakeSource) Kind() string { return "fake" }
+
+// ResolveLibraries implements source.LibraryResolver so scheduler tests can
+// exercise the one-time backfill wiring without a real jellyfin.db. Ids not
+// present in resolved are simply absent from the result, like the real
+// FileSource does for items no longer in BaseItems.
+func (f *fakeSource) ResolveLibraries(_ context.Context, itemIDs []string) (map[string]string, error) {
+	out := map[string]string{}
+	for _, id := range itemIDs {
+		if lib, ok := f.resolved[id]; ok {
+			out[id] = lib
+		}
+	}
+	return out, nil
+}
 
 func (f *fakeSource) PlaybackEvents(context.Context, time.Time) ([]source.PlaybackEvent, error) {
 	if f.pluginAbsent {
@@ -310,6 +326,37 @@ func TestRunWatchOnce_EmptySpineBypassesMtimeSkip(t *testing.T) {
 	st.DB().QueryRowContext(ctx, `SELECT count(*) FROM playback_events`).Scan(&spine)
 	if spine != 1 {
 		t.Fatalf("empty spine should have forced a backfill despite unchanged mtime, spine=%d", spine)
+	}
+}
+
+func TestRunWatchOnce_BackfillsUnknownLibrary(t *testing.T) {
+	ctx := context.Background()
+	sc, fs, st := newSched(t)
+
+	fs.events = []source.PlaybackEvent{
+		{At: time.Date(2025, 1, 6, 20, 0, 0, 0, time.UTC), UserID: "u1", ItemID: "m1", ItemType: "movie", Method: "DirectPlay", PlayDurationSec: 3600, Library: "Unknown"},
+	}
+	fs.resolved = map[string]string{"m1": "Movies"}
+
+	if err := sc.RunWatchOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	unknown, err := st.ItemsWithUnknownLibrary(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(unknown) != 0 {
+		t.Fatalf("expected backfill to resolve m1, still unknown: %v", unknown)
+	}
+	got, err := st.ReadPlaybackEvents(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range got {
+		if e.ItemID == "m1" && e.Library != "Movies" {
+			t.Errorf("m1 library not backfilled by resolver: %q", e.Library)
+		}
 	}
 }
 

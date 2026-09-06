@@ -52,6 +52,42 @@ func tableExists(db *sql.DB, name string) bool {
 	return err == nil && n > 0
 }
 
+// resolveLibraries looks up library names for a set of item ids directly
+// against a jellyfin.db copy, independent of what the Playback Reporting
+// plugin currently reports. Ids not found in BaseItems are simply absent from
+// the result map.
+func resolveLibraries(jdb *sql.DB, itemIDs []string) (map[string]string, error) {
+	if len(itemIDs) == 0 {
+		return map[string]string{}, nil
+	}
+	placeholders := make([]string, len(itemIDs))
+	args := make([]any, len(itemIDs))
+	for i, id := range itemIDs {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	q := `
+		WITH ` + foldersCTE + `
+		SELECT lower(replace(i.Id,'-','')), COALESCE(f.lib, 'Unknown')
+		FROM BaseItems i
+		LEFT JOIN folders f ON f.fid = i.TopParentId
+		WHERE lower(replace(i.Id,'-','')) IN (` + strings.Join(placeholders, ",") + `)`
+	rows, err := jdb.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]string{}
+	for rows.Next() {
+		var id, lib string
+		if err := rows.Scan(&id, &lib); err != nil {
+			return nil, err
+		}
+		out[id] = lib
+	}
+	return out, rows.Err()
+}
+
 // enrichPlaybackEvents fills UserName / ItemName / SeriesID / SeriesName from a
 // jellyfin.db copy. Best effort: rows it can't resolve keep their plugin values.
 func enrichPlaybackEvents(jdb *sql.DB, events []source.PlaybackEvent) error {
@@ -75,8 +111,8 @@ func enrichPlaybackEvents(jdb *sql.DB, events []source.PlaybackEvent) error {
 
 	type itemInfo struct {
 		name, seriesID, seriesName, genres, tags, library string
-		runtimeTicks                                       int64
-		year                                               int
+		runtimeTicks                                      int64
+		year                                              int
 	}
 	items := map[string]itemInfo{}
 	irows, err := jdb.Query(`

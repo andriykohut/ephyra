@@ -173,3 +173,43 @@ func TestSpineCoverage(t *testing.T) {
 		t.Fatalf("f=%q l=%q total=%d err=%v", f, l, total, err)
 	}
 }
+
+func TestItemsWithUnknownLibrary_And_UpdatePlaybackLibraries(t *testing.T) {
+	ctx := context.Background()
+	st := openStore(t)
+	e1 := ev(time.Date(2025, 1, 6, 20, 30, 0, 0, time.UTC), "u1", "m1", "movie", 3600)
+	e1.Library = "Unknown"
+	e2 := ev(time.Date(2025, 1, 6, 21, 30, 0, 0, time.UTC), "u1", "m2", "movie", 1800)
+	e2.Library = "Movies" // already resolved, should not come back
+	if err := st.AppendPlaybackEvents(ctx, []source.PlaybackEvent{e1, e2}); err != nil {
+		t.Fatal(err)
+	}
+
+	unknown, err := st.ItemsWithUnknownLibrary(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(unknown) != 1 || unknown[0] != "m1" {
+		t.Fatalf("unknown = %v, want [m1]", unknown)
+	}
+
+	if err := st.UpdatePlaybackLibraries(ctx, map[string]string{"m1": "Movies"}); err != nil {
+		t.Fatal(err)
+	}
+	unknown, err = st.ItemsWithUnknownLibrary(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(unknown) != 0 {
+		t.Fatalf("still unknown after update: %v", unknown)
+	}
+	got, err := st.ReadPlaybackEvents(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range got {
+		if e.ItemID == "m1" && e.Library != "Movies" {
+			t.Errorf("m1 library not updated: %q", e.Library)
+		}
+	}
+}

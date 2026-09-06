@@ -97,3 +97,11 @@ type Source interface {
 type MTimer interface {
 	SourceMTime(job string) (time.Time, error)
 }
+
+// LibraryResolver is implemented by sources that can re-resolve a set of item
+// ids' library names after the fact (the watch job's one-time backfill for
+// spine rows the plugin no longer reports). A future APISource that can't do
+// this simply doesn't implement it — the backfill becomes a no-op.
+type LibraryResolver interface {
+	ResolveLibraries(ctx context.Context, itemIDs []string) (map[string]string, error)
+}

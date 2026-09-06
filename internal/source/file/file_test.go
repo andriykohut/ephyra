@@ -232,3 +232,25 @@ func TestPlaybackEvents_Library(t *testing.T) {
 		t.Fatalf("missing cases: movie=%v episode=%v deleted=%v", sawMovie, sawEpisode, sawDeleted)
 	}
 }
+
+func TestResolveLibraries(t *testing.T) {
+	f := newFS(t, testsupport.TwoDBLayout(t))
+
+	resolved, err := f.ResolveLibraries(context.Background(), []string{
+		"0000000000000000000000000000000a", // Alpha, Movies
+		"000000000000000000000000000000e1", // S1E1, Shows
+		"nonexistentitemidxxxxxxxxxxxxxxx", // not in BaseItems at all
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved["0000000000000000000000000000000a"] != "Movies" {
+		t.Errorf("Alpha: %q", resolved["0000000000000000000000000000000a"])
+	}
+	if resolved["000000000000000000000000000000e1"] != "Shows" {
+		t.Errorf("S1E1: %q", resolved["000000000000000000000000000000e1"])
+	}
+	if _, ok := resolved["nonexistentitemidxxxxxxxxxxxxxxx"]; ok {
+		t.Error("unmatched id should not appear in the result map at all")
+	}
+}

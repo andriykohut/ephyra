@@ -132,6 +132,19 @@ func (f *FileSource) PlaybackEvents(ctx context.Context, _ time.Time) ([]source.
 	return events, nil
 }
 
+// ResolveLibraries backfills library names for a set of item ids against the
+// current jellyfin.db copy, independent of what the Playback Reporting
+// plugin currently reports. Ids not found in BaseItems are simply absent
+// from the result map — best effort, no error.
+func (f *FileSource) ResolveLibraries(ctx context.Context, itemIDs []string) (map[string]string, error) {
+	jdb, cleanup, err := f.openForRead(ctx, "library")
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
+	return resolveLibraries(jdb, itemIDs)
+}
+
 // openForRead returns a read-only *sql.DB over a private copy of the job's
 // database (default) or the live file (DIRECT_READ=true). cleanup closes the DB
 // and, for the copy path, removes the copy.
