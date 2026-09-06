@@ -154,8 +154,8 @@ func TestOpenAppliesMigrationsIdempotently(t *testing.T) {
 	if err := s1.DB().QueryRowContext(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
-	if n != 5 {
-		t.Fatalf("want 5 applied migrations, got %d", n)
+	if n != 6 {
+		t.Fatalf("want 6 applied migrations, got %d", n)
 	}
 	if err := s1.Close(); err != nil {
 		t.Fatal(err)
@@ -243,8 +243,8 @@ func TestMigration0002Redefinitions(t *testing.T) {
 	if err := s.DB().QueryRowContext(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
-	if n != 5 {
-		t.Fatalf("want 5 migrations applied, got %d", n)
+	if n != 6 {
+		t.Fatalf("want 6 migrations applied, got %d", n)
 	}
 }
 
@@ -274,16 +274,17 @@ func TestMigrate_0003_ProfileTables(t *testing.T) {
 	if err := st.DB().QueryRow(`SELECT MAX(version) FROM schema_migrations`).Scan(&v); err != nil {
 		t.Fatal(err)
 	}
-	if v != 5 {
-		t.Fatalf("schema_migrations max version = %d, want 5", v)
+	if v != 6 {
+		t.Fatalf("schema_migrations max version = %d, want 6", v)
 	}
 
 	var idx int
 	st.DB().QueryRow(
-		`SELECT count(*) FROM sqlite_master WHERE type='index' AND tbl_name='playback_events' AND sql LIKE '%dedup_hash%'`,
+		`SELECT count(*) FROM sqlite_master WHERE type='index' AND tbl_name='playback_events'
+		 AND sql LIKE '%UNIQUE%' AND sql LIKE '%at, user_id, item_id%'`,
 	).Scan(&idx)
 	if idx == 0 {
-		t.Fatal("expected a unique index on playback_events.dedup_hash")
+		t.Fatal("expected a unique index on playback_events (at, user_id, item_id)")
 	}
 }
 

@@ -2,9 +2,6 @@ package store
 
 import (
 	"context"
-	"crypto/sha1"
-	"encoding/hex"
-	"strconv"
 	"strings"
 	"time"
 
@@ -42,23 +39,15 @@ func parseSpineTime(s string) time.Time {
 	return t
 }
 
-// spineDedupHash identifies a plugin session by its immutable coordinates. Two
-// genuinely distinct plays that share all four collapse to one row; that is
-// accepted (see the design doc, section 4.3).
-func spineDedupHash(ev source.PlaybackEvent) string {
-	parts := strings.Join([]string{
-		formatSpineTime(ev.At),
-		ev.UserID,
-		ev.ItemID,
-		strconv.FormatInt(ev.PlayDurationSec, 10),
-	}, "\x1f")
-	sum := sha1.Sum([]byte(parts))
-	return hex.EncodeToString(sum[:])
-}
-
 // AppendPlaybackEvents inserts events the spine has not seen and refreshes the
-// enrichable columns (item_name / series_* / the library-fact snapshot) on the
-// ones it has. Its own transaction; idempotent.
+// mutable columns on the ones it has: the enrichment (item_name / series_* /
+// the library-fact snapshot) plus play_duration_sec and method, which the
+// plugin rewrites in place while a session is still open. Its own transaction;
+// idempotent.
+//
+// A play is identified by (at, user_id, item_id) -- what the plugin keys its
+// own row on. Two genuinely distinct plays by one user of one item in the same
+// clock-second collapse into one row; accepted, and vanishingly rare.
 func (s *Store) AppendPlaybackEvents(ctx context.Context, evs []source.PlaybackEvent) error {
 	if len(evs) == 0 {
 		return nil
@@ -72,22 +61,24 @@ func (s *Store) AppendPlaybackEvents(ctx context.Context, evs []source.PlaybackE
 	const q = `
 		INSERT INTO playback_events
 		  (at, user_id, item_id, item_type, method, play_duration_sec,
-		   item_name, series_id, series_name, item_runtime_sec, item_year, item_genres, item_tags, library, dedup_hash)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-		ON CONFLICT(dedup_hash) DO UPDATE SET
-		  item_name        = excluded.item_name,
-		  series_id        = excluded.series_id,
-		  series_name      = excluded.series_name,
-		  item_runtime_sec = excluded.item_runtime_sec,
-		  item_year        = excluded.item_year,
-		  item_genres      = excluded.item_genres,
-		  item_tags        = excluded.item_tags,
-		  library          = excluded.library`
+		   item_name, series_id, series_name, item_runtime_sec, item_year, item_genres, item_tags, library)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		ON CONFLICT(at, user_id, item_id) DO UPDATE SET
+		  method            = excluded.method,
+		  play_duration_sec = excluded.play_duration_sec,
+		  item_name         = excluded.item_name,
+		  series_id         = excluded.series_id,
+		  series_name       = excluded.series_name,
+		  item_runtime_sec  = excluded.item_runtime_sec,
+		  item_year         = excluded.item_year,
+		  item_genres       = excluded.item_genres,
+		  item_tags         = excluded.item_tags,
+		  library           = excluded.library`
 	for _, e := range evs {
 		if _, err := tx.ExecContext(ctx, q,
 			formatSpineTime(e.At), e.UserID, e.ItemID, e.ItemType, e.Method, e.PlayDurationSec,
 			e.ItemName, e.SeriesID, e.SeriesName,
-			e.ItemRuntimeSec, e.ItemYear, joinGenres(e.ItemGenres), joinTags(e.ItemTags), e.Library, spineDedupHash(e),
+			e.ItemRuntimeSec, e.ItemYear, joinGenres(e.ItemGenres), joinTags(e.ItemTags), e.Library,
 		); err != nil {
 			return err
 		}

@@ -112,7 +112,7 @@ is append-only and never DELETEd. It *is* the history.
 | `series_id` | TEXT | canonical; `''` for movies / unresolved. From `jellyfin.db` enrichment only. |
 | `series_name` | TEXT | `''` for movies / unresolved |
 | `item_runtime_sec` / `item_year` / `item_genres` | INT / INT / TEXT | library-fact snapshot from the `jellyfin.db` enrichment, refreshed on conflict while the item exists, retained verbatim once it's deleted. `item_genres` is pipe-joined. **Stored** (not re-derived at read time) because `ReadPlaybackEvents` feeds `aggregate.Profiles` directly and the source enrichment only covers rows the plugin still has. |
-| `dedup_hash` | TEXT | `UNIQUE`. `sha1(at | "\x1f" | user_id | "\x1f" | item_id | "\x1f" | play_duration_sec)` |
+| ~~`dedup_hash`~~ | TEXT | `UNIQUE`. `sha1(at | "\x1f" | user_id | "\x1f" | item_id | "\x1f" | play_duration_sec)`. **Dropped by migration 0006** — see §4.3. The unique key is now `(at, user_id, item_id)` directly. |
 
 Indexes: `(user_id, item_id)`, `(at)`.
 
@@ -134,8 +134,9 @@ ON CONFLICT(dedup_hash) DO UPDATE SET
 
 The `ON CONFLICT` clause keeps names fresh for items that still exist while
 leaving deleted-item rows with their last good enrichment. Immutable columns
-(`at`, `user_id`, `item_id`, `item_type`, `method`, `play_duration_sec`) are
-never touched after first insert.
+(`at`, `user_id`, `item_id`, `item_type`) are never touched after first insert.
+(`method` and `play_duration_sec` were on that list until §4.3's second bullet
+came true; they are refreshed on conflict now.)
 
 The append runs in its own transaction, before the derived-table rewrites. It
 is idempotent, so a crash between transactions self-heals: the next run
@@ -155,9 +156,19 @@ Once the spine has any row, normal mtime-skip resumes.
 - Two genuinely distinct plays by the same user of the same item, in the same
   clock-second, with identical `play_duration_sec` → collapse to one row.
   Accepted; vanishingly rare.
-- The plugin editing a historical row's `play_duration_sec` post-hoc → the hash
-  changes, producing a second row and a double-count for that one play.
-  Believed not to happen; not handled. Flagged in §11 open questions.
+- ~~The plugin editing a historical row's `play_duration_sec` post-hoc → the
+  hash changes, producing a second row and a double-count for that one play.
+  Believed not to happen; not handled. Flagged in §11 open questions.~~
+
+  **It does happen, and it is now handled (2026-09-06).** The plugin writes a
+  row when a session *starts* and rewrites its `PlayDuration` in place as the
+  session runs, so every watch refresh that caught a longer duration minted a
+  fresh spine row. A film left paused overnight showed up as six plays with a
+  watch time of `570+1164+1751+2359+2891+2957`. Migration 0006 drops
+  `dedup_hash`, keys the spine on `(at, user_id, item_id)` — the plugin's own
+  session key — and collapses the rows that already piled up to the longest
+  duration of each session. `play_duration_sec` and `method` moved from the
+  immutable column list in §4.1 to the `ON CONFLICT` refresh list.
 - The plugin pruning old rows under its max-age setting → the spine keeps them.
   That is the entire point of the spine.
 

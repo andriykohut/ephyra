@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"database/sql"
+	"fmt"
 	"testing"
 	"time"
 
@@ -211,5 +213,101 @@ func TestItemsWithUnknownLibrary_And_UpdatePlaybackLibraries(t *testing.T) {
 		if e.ItemID == "m1" && e.Library != "Movies" {
 			t.Errorf("m1 library not updated: %q", e.Library)
 		}
+	}
+}
+
+// The Playback Reporting plugin updates an in-progress session's row in place:
+// DateCreated / UserId / ItemId stay put while PlayDuration grows on every
+// write. The spine has to see that as one play, not one per refresh.
+func TestAppendPlaybackEvents_GrowingDurationStaysOneRow(t *testing.T) {
+	ctx := context.Background()
+	st := openStore(t)
+	at := time.Date(2026, 9, 5, 21, 51, 50, 0, time.UTC)
+
+	for _, dur := range []int64{570, 1164, 1751, 2359, 2891, 2957} {
+		e := ev(at, "u1", "m1", "movie", dur)
+		if err := st.AppendPlaybackEvents(ctx, []source.PlaybackEvent{e}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var n int
+	var dur int64
+	if err := st.DB().QueryRowContext(ctx,
+		`SELECT count(*), COALESCE(MAX(play_duration_sec), 0) FROM playback_events`,
+	).Scan(&n, &dur); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 || dur != 2957 {
+		t.Fatalf("got %d rows / %ds, want 1 row / 2957s", n, dur)
+	}
+}
+
+// A store that shipped with the duration-in-the-hash key accumulated one row
+// per refresh for every session that was still open. The migration has to
+// collapse those back to one row apiece, keeping the longest duration.
+func TestMigration_CollapsesDuplicateSessions(t *testing.T) {
+	ctx := context.Background()
+	path := t.TempDir() + "/legacy.db"
+
+	// A v5 install: everything up to 0005 applied and stamped, so the Open()
+	// below runs 0006 and nothing else.
+	db, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	applyMigrationsUpTo(t, ctx, db, 5)
+
+	const ins = `INSERT INTO playback_events
+	  (at, user_id, item_id, item_type, method, play_duration_sec, item_name, dedup_hash)
+	  VALUES (?,?,?,?,?,?,?,?)`
+	for i, dur := range []int64{570, 1164, 1751, 2359, 2891, 2957} {
+		if _, err := db.Exec(ins, "2026-09-05 21:51:50", "u1", "m1", "movie", "DirectPlay",
+			dur, "Rose of Nevada", fmt.Sprintf("hash-%d", i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// An unrelated session must survive untouched.
+	if _, err := db.Exec(ins, "2026-09-04 18:11:46", "u1", "e2", "episode", "DirectPlay",
+		3499, "Troy", "hash-other"); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+
+	st, err := Open(ctx, path)
+	if err != nil {
+		t.Fatalf("open (runs 0006): %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	var n int
+	var dur int64
+	if err := st.DB().QueryRowContext(ctx,
+		`SELECT count(*), COALESCE(MAX(play_duration_sec), 0) FROM playback_events WHERE item_id = 'm1'`,
+	).Scan(&n, &dur); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 || dur != 2957 {
+		t.Fatalf("collapsed session: got %d rows / %ds, want 1 row / 2957s", n, dur)
+	}
+	if err := st.DB().QueryRowContext(ctx,
+		`SELECT count(*) FROM playback_events`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Fatalf("spine has %d rows, want 2 (the collapsed session plus the untouched one)", n)
+	}
+
+	// And the migrated rows must keep deduping against fresh plugin reads.
+	at := time.Date(2026, 9, 5, 21, 51, 50, 0, time.UTC)
+	if err := st.AppendPlaybackEvents(ctx, []source.PlaybackEvent{ev(at, "u1", "m1", "movie", 3000)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.DB().QueryRowContext(ctx,
+		`SELECT count(*) FROM playback_events WHERE item_id = 'm1'`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("re-append after migration made %d rows, want 1", n)
 	}
 }

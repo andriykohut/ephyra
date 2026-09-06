@@ -398,8 +398,8 @@ func TestRunWatchOnce_MigrationMtimeResetForcesFullRun(t *testing.T) {
 
 	// A non-empty spine, as a real pre-upgrade install would have.
 	if _, err := st.DB().ExecContext(ctx, `
-		INSERT INTO playback_events (dedup_hash, user_id, item_id, item_type, method, at, play_duration_sec)
-		VALUES ('h0', 'u0', 'i0', 'movie', 'DirectPlay', '2025-01-01T00:00:00Z', 100)`,
+		INSERT INTO playback_events (user_id, item_id, item_type, method, at, play_duration_sec)
+		VALUES ('u0', 'i0', 'movie', 'DirectPlay', '2025-01-01T00:00:00Z', 100)`,
 	); err != nil {
 		t.Fatal(err)
 	}

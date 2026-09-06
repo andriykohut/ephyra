@@ -75,9 +75,12 @@ API handlers read ONLY from store's agg_* tables, never from Jellyfin.
   runner owns `schema_migrations`, so a migration must **not** `CREATE` it.
   `agg_*` tables are fully rewritten per refresh; the API always sees a complete
   set. `refresh_meta` drives staleness. The one exception is `playback_events`:
-  append-only, never rewritten — the watch job upserts new plugin rows into it
-  (idempotent on `dedup_hash`), reads the whole history back, and feeds *that*
-  to both `aggregate.Watch` and `aggregate.Profiles`.
+  append-only, never rewritten — the watch job upserts new plugin rows into it,
+  reads the whole history back, and feeds *that* to both `aggregate.Watch` and
+  `aggregate.Profiles`. A play is keyed by `(at, user_id, item_id)`, the
+  plugin's own session key: the plugin rewrites an open session's
+  `PlayDuration` in place, so the upsert refreshes the duration on the existing
+  row instead of minting a new one per refresh.
 - `internal/scheduler` — one ticker per job + a manual-trigger channel, per-job
   mutex, mtime-skip. Runs each job once on startup.
 - `internal/api` — `net/http` `ServeMux` (method patterns). Every JSON response is
