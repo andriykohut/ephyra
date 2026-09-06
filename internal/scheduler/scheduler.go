@@ -193,11 +193,15 @@ func (s *Scheduler) RunWatchOnce(ctx context.Context) error {
 	if err := s.st.WriteWatchAggregates(ctx, agg.Daily, agg.Heatmap); err != nil {
 		return s.recordFailure(ctx, "watch", mt, start, err)
 	}
-	// TODO(task-14): compute and write per-library scopes; "" ("All libraries")
-	// is a placeholder to keep the build green until that wiring lands.
-	if err := s.st.WriteProfileAggregates(ctx, map[string]aggregate.ProfileAggregates{
-		"": aggregate.Profiles(history, time.Now()),
-	}); err != nil {
+	now := time.Now()
+	scopedProfiles := map[string]aggregate.ProfileAggregates{"": aggregate.Profiles(history, now)}
+	for _, lib := range aggregate.DistinctEventLibraries(history) {
+		if lib == "" {
+			continue // "" already means "All" above; a real Library is never empty
+		}
+		scopedProfiles[lib] = aggregate.Profiles(aggregate.FilterEventsByLibrary(history, lib), now)
+	}
+	if err := s.st.WriteProfileAggregates(ctx, scopedProfiles); err != nil {
 		return s.recordFailure(ctx, "watch", mt, start, err)
 	}
 	s.log.Info("watch refresh ok", "events_seen", len(events), "history", len(history),

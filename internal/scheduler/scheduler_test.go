@@ -483,3 +483,60 @@ func TestRunWatchOnce_PopulatesProfileTables(t *testing.T) {
 		t.Fatalf("profile rows should survive a plugin-absent run, got %d", summ)
 	}
 }
+
+func TestRunWatchOnce_PerLibraryProfiles(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir()+"/s.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	// alice has plays only in the Movies library; she has none in Shows.
+	fs := &fakeSource{
+		snap: source.LibrarySnapshot{Users: []source.UserRef{{ID: "alice", Name: "Alice"}}},
+		events: []source.PlaybackEvent{
+			{At: time.Date(2025, 1, 6, 20, 0, 0, 0, time.UTC), UserID: "alice", ItemID: "m1", ItemType: "movie",
+				Method: "DirectPlay", PlayDurationSec: 3600, ItemRuntimeSec: 3600, ItemYear: 1994,
+				ItemGenres: []string{"Drama"}, Library: "Movies"},
+			{At: time.Date(2025, 1, 7, 20, 0, 0, 0, time.UTC), UserID: "alice", ItemID: "m2", ItemType: "movie",
+				Method: "DirectPlay", PlayDurationSec: 1800, ItemRuntimeSec: 3600, ItemYear: 2001,
+				ItemGenres: []string{"Comedy"}, Library: "Movies"},
+		},
+	}
+	mt := time.Unix(1000, 0)
+	fs.mtime.Store(&mt)
+	sc := New(st, fs, config.Config{RefreshLibrary: time.Hour, RefreshWatch: time.Hour}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	if err := sc.RunLibraryOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := sc.RunWatchOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	all, ok, err := st.ReadProfile(ctx, "alice", "all", "")
+	if err != nil || !ok {
+		t.Fatalf("all: ok=%v err=%v", ok, err)
+	}
+	if all.Summary.WatchSec != 5400 {
+		t.Fatalf("all watch_sec = %d, want 5400", all.Summary.WatchSec)
+	}
+
+	movies, ok, err := st.ReadProfile(ctx, "alice", "all", "Movies")
+	if err != nil || !ok {
+		t.Fatalf("movies: ok=%v err=%v", ok, err)
+	}
+	if movies.Summary.WatchSec != all.Summary.WatchSec {
+		t.Fatalf("alice has only Movies plays, movies(%d) should equal all(%d)",
+			movies.Summary.WatchSec, all.Summary.WatchSec)
+	}
+
+	shows, ok, err := st.ReadProfile(ctx, "alice", "all", "Shows")
+	if err != nil || !ok {
+		t.Fatalf("shows: ok=%v err=%v", ok, err)
+	}
+	if shows.Summary.WatchSec != 0 {
+		t.Fatalf("alice has no Shows plays, want 0, got %d", shows.Summary.WatchSec)
+	}
+}
