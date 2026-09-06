@@ -26,13 +26,13 @@ type CorePlayRow struct {
 
 // WatchDailyRow is one (day, user, title, method) fact from the plugin.
 type WatchDailyRow struct {
-	Day, UserID, ItemID, Scope, Name, SeriesID, SeriesName, Method string
-	Plays, WatchSec                                                int64
+	Day, UserID, ItemID, Scope, Name, SeriesID, SeriesName, Method, Library string
+	Plays, WatchSec                                                         int64
 }
 
-// HeatmapRow is one (user, day-of-week, hour) cell, all of history.
+// HeatmapRow is one (user, day-of-week, hour, library) cell, all of history.
 type HeatmapRow struct {
-	UserID          string
+	UserID, Library string
 	DOW, Hour       int
 	WatchSec, Plays int64
 }

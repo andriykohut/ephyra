@@ -18,8 +18,8 @@ type WatchAggregates struct {
 func Watch(events []source.PlaybackEvent) WatchAggregates {
 	type dKey struct{ day, user, item, method string }
 	type hKey struct {
-		user      string
-		dow, hour int
+		user, library string
+		dow, hour     int
 	}
 	daily := map[dKey]*WatchDailyRow{}
 	heat := map[hKey]*HeatmapRow{}
@@ -36,16 +36,17 @@ func Watch(events []source.PlaybackEvent) WatchAggregates {
 			r = &WatchDailyRow{
 				Day: day, UserID: e.UserID, ItemID: e.ItemID, Scope: e.ItemType,
 				Name: e.ItemName, SeriesID: e.SeriesID, SeriesName: e.SeriesName, Method: mb,
+				Library: e.Library,
 			}
 			daily[dk] = r
 		}
 		r.Plays++
 		r.WatchSec += e.PlayDurationSec
 
-		hk := hKey{e.UserID, int(e.At.Weekday()), e.At.Hour()}
+		hk := hKey{e.UserID, e.Library, int(e.At.Weekday()), e.At.Hour()}
 		h := heat[hk]
 		if h == nil {
-			h = &HeatmapRow{UserID: e.UserID, DOW: hk.dow, Hour: hk.hour}
+			h = &HeatmapRow{UserID: e.UserID, Library: e.Library, DOW: hk.dow, Hour: hk.hour}
 			heat[hk] = h
 		}
 		h.Plays++
@@ -80,7 +81,10 @@ func Watch(events []source.PlaybackEvent) WatchAggregates {
 		if a.DOW != b.DOW {
 			return a.DOW < b.DOW
 		}
-		return a.Hour < b.Hour
+		if a.Hour != b.Hour {
+			return a.Hour < b.Hour
+		}
+		return a.Library < b.Library
 	})
 	return out
 }
