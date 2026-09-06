@@ -44,3 +44,13 @@ func TestCorePlays_TopNPerUserAndOrder(t *testing.T) {
 		}
 	}
 }
+
+func TestCorePlays_Library(t *testing.T) {
+	plays := []source.UserPlay{
+		{UserID: "u1", ItemID: "m1", Scope: "movie", Name: "Alpha", Library: "Movies", PlayCount: 3},
+	}
+	out := CorePlays(plays)
+	if len(out) != 1 || out[0].Library != "Movies" {
+		t.Fatalf("got %+v", out)
+	}
+}

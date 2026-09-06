@@ -108,7 +108,9 @@ const usersQuery = `SELECT lower(replace(Id,'-','')), COALESCE(Username,'') FROM
 // userPlaysQuery rolls UserData to one row per (user, movie|series): episodes
 // fold into their series, movies stay themselves.
 const userPlaysQuery = `
-SELECT uid, scope, pid, MAX(name) AS name, SUM(pc) AS play_count, MAX(lpd) AS last_played
+WITH ` + foldersCTE + `
+SELECT uid, scope, pid, MAX(name) AS name, SUM(pc) AS play_count, MAX(lpd) AS last_played,
+       MAX(library) AS library
 FROM (
   SELECT lower(replace(ud.UserId,'-',''))  AS uid,
          CASE WHEN bi.Type = '` + episodeType + `' THEN 'series' ELSE 'movie' END AS scope,
@@ -118,12 +120,14 @@ FROM (
          CASE WHEN bi.Type = '` + episodeType + `' AND COALESCE(bi.SeriesName,'') <> ''
               THEN bi.SeriesName ELSE bi.Name END AS name,
          MAX(ud.PlayCount)      AS pc,
-         MAX(ud.LastPlayedDate) AS lpd
+         MAX(ud.LastPlayedDate) AS lpd,
+         COALESCE(f.lib, 'Unknown') AS library
   FROM UserData ud
   JOIN BaseItems bi ON bi.Id = ud.ItemId
+  LEFT JOIN folders f ON f.fid = bi.TopParentId
   WHERE bi.Type IN ('` + movieType + `', '` + episodeType + `')
     AND COALESCE(ud.PlayCount,0) > 0
-  GROUP BY uid, pid, ud.ItemId
+  GROUP BY uid, pid, ud.ItemId, library
 )
 GROUP BY uid, pid`
 
@@ -271,7 +275,7 @@ func readUserPlays(db *sql.DB, snap *source.LibrarySnapshot) error {
 		var p source.UserPlay
 		var pc int64
 		var lpd sql.NullString
-		if err := rows.Scan(&p.UserID, &p.Scope, &p.ItemID, &p.Name, &pc, &lpd); err != nil {
+		if err := rows.Scan(&p.UserID, &p.Scope, &p.ItemID, &p.Name, &pc, &lpd, &p.Library); err != nil {
 			return err
 		}
 		p.PlayCount = int(pc)

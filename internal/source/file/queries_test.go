@@ -134,3 +134,18 @@ func TestQueryLibrary_PlayedStateAndUsers(t *testing.T) {
 		t.Errorf("expected a rolled-up series UserPlay for Some Show: %+v", snap.UserPlays)
 	}
 }
+
+func TestUserPlays_Library(t *testing.T) {
+	snap, err := defaultQueryLibrary(openFixture(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	byItem := map[string]source.UserPlay{}
+	for _, p := range snap.UserPlays {
+		byItem[p.ItemID] = p
+	}
+	// Bravo is a Movies-library title with PlayCount > 0 in the fixture.
+	if bravo, ok := byItem["0000000000000000000000000000000b"]; !ok || bravo.Library != "Movies" {
+		t.Fatalf("bravo userplay library = %+v", bravo)
+	}
+}

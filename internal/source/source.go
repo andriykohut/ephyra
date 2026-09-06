@@ -52,9 +52,9 @@ type UserRef struct{ ID, Name string } // ID canonical
 // UserPlay is one user's play rollup for a movie or a whole series, from
 // Jellyfin's own UserData counters.
 type UserPlay struct {
-	UserID, ItemID, Scope, Name string // Scope: "movie" | "series"; ItemID canonical (movie or series id)
-	PlayCount                   int
-	LastPlayedAt                time.Time
+	UserID, ItemID, Scope, Name, Library string // Scope: "movie" | "series"; ItemID canonical (movie or series id)
+	PlayCount                            int
+	LastPlayedAt                         time.Time
 }
 
 // LibrarySnapshot is everything a library refresh pulled from Jellyfin.

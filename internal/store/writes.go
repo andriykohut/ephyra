@@ -120,7 +120,7 @@ func (s *Store) WriteLibraryAggregates(ctx context.Context, scoped map[string]ag
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO agg_played_core (user_id, scope, item_id, name, play_count, last_played_at, library)
 			VALUES (?,?,?,?,?,?,?)`,
-			p.UserID, p.Scope, p.ItemID, p.Name, p.PlayCount, nullif(p.LastPlayedAt), "",
+			p.UserID, p.Scope, p.ItemID, p.Name, p.PlayCount, nullif(p.LastPlayedAt), p.Library,
 		); err != nil {
 			return err
 		}

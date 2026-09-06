@@ -14,7 +14,7 @@ func CorePlays(plays []source.UserPlay) []CorePlayRow {
 	byUser := map[string][]CorePlayRow{}
 	for _, p := range plays {
 		byUser[p.UserID] = append(byUser[p.UserID], CorePlayRow{
-			UserID: p.UserID, Scope: p.Scope, ItemID: p.ItemID, Name: p.Name,
+			UserID: p.UserID, Scope: p.Scope, ItemID: p.ItemID, Name: p.Name, Library: p.Library,
 			PlayCount: int64(p.PlayCount), LastPlayedAt: rfc3339(p.LastPlayedAt),
 		})
 	}

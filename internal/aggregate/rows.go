@@ -19,9 +19,9 @@ type UserRow struct{ ID, Name string }
 // CorePlayRow is a per-user play count from Jellyfin's own counters, for the
 // always-on "most played" panel.
 type CorePlayRow struct {
-	UserID, Scope, ItemID, Name string
-	PlayCount                   int64
-	LastPlayedAt                string // RFC3339, "" if none
+	UserID, Scope, ItemID, Name, Library string
+	PlayCount                            int64
+	LastPlayedAt                         string // RFC3339, "" if none
 }
 
 // WatchDailyRow is one (day, user, title, method) fact from the plugin.
