@@ -204,7 +204,7 @@ func defaultQueryLibrary(db *sql.DB) (source.LibrarySnapshot, error) {
 			srows.Close()
 			return source.LibrarySnapshot{}, err
 		}
-		snap.SeriesCounts[lib] = n
+		snap.SeriesCounts[lib] += n
 	}
 	srows.Close()
 	if err := srows.Err(); err != nil {

@@ -2,6 +2,7 @@ package file
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -252,5 +253,75 @@ func TestResolveLibraries(t *testing.T) {
 	}
 	if _, ok := resolved["nonexistentitemidxxxxxxxxxxxxxxx"]; ok {
 		t.Error("unmatched id should not appear in the result map at all")
+	}
+}
+
+func TestChunkIDs(t *testing.T) {
+	cases := []struct {
+		name string
+		in   []string
+		size int
+		want [][]string
+	}{
+		{"empty", nil, 3, nil},
+		{"under size", []string{"a", "b"}, 3, [][]string{{"a", "b"}}},
+		{"exact multiple", []string{"a", "b", "c", "d"}, 2, [][]string{{"a", "b"}, {"c", "d"}}},
+		{"remainder", []string{"a", "b", "c", "d", "e"}, 2, [][]string{{"a", "b"}, {"c", "d"}, {"e"}}},
+		{"size <= 0 means one chunk", []string{"a", "b", "c"}, 0, [][]string{{"a", "b", "c"}}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := chunkIDs(tc.in, tc.size)
+			if len(got) != len(tc.want) {
+				t.Fatalf("chunkIDs(%v, %d) = %v, want %v", tc.in, tc.size, got, tc.want)
+			}
+			for i := range got {
+				if len(got[i]) != len(tc.want[i]) {
+					t.Fatalf("chunk %d: got %v want %v", i, got[i], tc.want[i])
+				}
+				for j := range got[i] {
+					if got[i][j] != tc.want[i][j] {
+						t.Fatalf("chunk %d elem %d: got %q want %q", i, j, got[i][j], tc.want[i][j])
+					}
+				}
+			}
+		})
+	}
+}
+
+// TestResolveLibraries_BatchesLargeInput proves resolveLibraries chunks its
+// IN (...) query instead of building one placeholder per id: with an input
+// spanning several resolveLibrariesBatchSize-sized batches, every batch's
+// results must still land in the single merged output map, real items
+// scattered across batch boundaries included.
+func TestResolveLibraries_BatchesLargeInput(t *testing.T) {
+	f := newFS(t, testsupport.TwoDBLayout(t))
+	jdb, cleanup, err := f.openForRead(context.Background(), "library")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+
+	const n = resolveLibrariesBatchSize*2 + 200 // spans 3 batches
+	ids := make([]string, 0, n+2)
+	// Real ids placed near the start and end so they land in different batches.
+	ids = append(ids, "0000000000000000000000000000000a") // Alpha, Movies
+	for i := 0; i < n; i++ {
+		ids = append(ids, fmt.Sprintf("nonexistentpadding%013d", i))
+	}
+	ids = append(ids, "000000000000000000000000000000e1") // S1E1, Shows
+
+	resolved, err := resolveLibraries(jdb, ids)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved["0000000000000000000000000000000a"] != "Movies" {
+		t.Errorf("Alpha (first batch): %q", resolved["0000000000000000000000000000000a"])
+	}
+	if resolved["000000000000000000000000000000e1"] != "Shows" {
+		t.Errorf("S1E1 (last batch): %q", resolved["000000000000000000000000000000e1"])
+	}
+	if len(resolved) != 2 {
+		t.Errorf("expected only the 2 real ids to resolve, got %d: %v", len(resolved), resolved)
 	}
 }

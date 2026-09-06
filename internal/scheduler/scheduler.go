@@ -106,6 +106,9 @@ func (s *Scheduler) RunLibraryOnce(ctx context.Context) error {
 	}
 	scoped := map[string]aggregate.LibraryAggregates{"": aggregate.Library(snap, time.Local)}
 	for _, lib := range aggregate.DistinctItemLibraries(snap.Items) {
+		if lib == "" {
+			continue // "" already means "All" above; a real Library is never empty
+		}
 		scoped[lib] = aggregate.Library(aggregate.FilterLibrary(snap, lib), time.Local)
 	}
 	cleanup := aggregate.Cleanup(snap)

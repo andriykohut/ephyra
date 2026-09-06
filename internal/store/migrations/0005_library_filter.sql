@@ -139,3 +139,8 @@ CREATE TABLE agg_profile_tag_overlap (
   library TEXT NOT NULL DEFAULT '', cosine REAL NOT NULL, shared TEXT NOT NULL,
   PRIMARY KEY (user_a, user_b, range, library)
 );
+
+-- This migration drops and rebuilds every agg_* table above. Both jobs' mtime
+-- skip would otherwise leave them empty until the underlying DB happens to
+-- change, so blank the recorded mtimes to force exactly one full re-run.
+UPDATE refresh_meta SET source_mtime = '' WHERE job IN ('library', 'watch');

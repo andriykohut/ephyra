@@ -226,13 +226,22 @@ func (s *Store) ReadWatchStats(ctx context.Context, p WatchStatsParams) (WatchSt
 		return ws, err
 	}
 
+	// The active-users panel intentionally ignores the user filter (it's meant
+	// to show the whole leaderboard even when one user is selected elsewhere
+	// on the page), but library is a separate, orthogonal axis that should
+	// still scope it -- so build activeWhere off rangeWhere, not scoped.
+	activeWhere, activeArgs := rangeWhere, append([]any{}, rangeArgs...)
+	if p.Library != "" {
+		activeWhere += " AND library = ?"
+		activeArgs = append(activeArgs, p.Library)
+	}
 	arows, err := s.db.QueryContext(ctx, `
 		SELECT w.user_id, COALESCE(d.name, w.user_id),
 		       SUM(w.watch_sec), SUM(w.plays), COUNT(DISTINCT w.item_id)
 		FROM watch_events_daily w
 		LEFT JOIN dim_user d ON d.id = w.user_id
-		WHERE `+rangeWhere+`
-		GROUP BY w.user_id ORDER BY SUM(w.watch_sec) DESC`, rangeArgs...)
+		WHERE `+activeWhere+`
+		GROUP BY w.user_id ORDER BY SUM(w.watch_sec) DESC`, activeArgs...)
 	if err != nil {
 		return ws, err
 	}

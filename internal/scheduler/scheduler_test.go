@@ -30,7 +30,7 @@ type fakeSource struct {
 func (f *fakeSource) Kind() string { return "fake" }
 
 // ResolveLibraries implements source.LibraryResolver so scheduler tests can
-// exercise the one-time backfill wiring without a real jellyfin.db. Ids not
+// exercise the residual backfill sweep wiring without a real jellyfin.db. Ids not
 // present in resolved are simply absent from the result, like the real
 // FileSource does for items no longer in BaseItems. If resolveErr is set, it
 // is returned instead — used to exercise the backfill's non-fatal error path.
@@ -379,6 +379,107 @@ func TestRunWatchOnce_EmptySpineBypassesMtimeSkip(t *testing.T) {
 	st.DB().QueryRowContext(ctx, `SELECT count(*) FROM playback_events`).Scan(&spine)
 	if spine != 1 {
 		t.Fatalf("empty spine should have forced a backfill despite unchanged mtime, spine=%d", spine)
+	}
+}
+
+// TestRunWatchOnce_MigrationMtimeResetForcesFullRun simulates an upgrade
+// across migration 0005: refresh_meta already recorded the current mtime
+// (last run was "ok" before the upgrade), and the spine is non-empty (so the
+// pre-existing spineEmpty bypass does not kick in and mask the bug). Without
+// migration 0005 blanking source_mtime, this run would skip forever and the
+// per-library agg_watch_* tables added by that migration would stay empty.
+func TestRunWatchOnce_MigrationMtimeResetForcesFullRun(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir()+"/s.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	// A non-empty spine, as a real pre-upgrade install would have.
+	if _, err := st.DB().ExecContext(ctx, `
+		INSERT INTO playback_events (dedup_hash, user_id, item_id, item_type, method, at, play_duration_sec)
+		VALUES ('h0', 'u0', 'i0', 'movie', 'DirectPlay', '2025-01-01T00:00:00Z', 100)`,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	mt := time.Unix(1000, 0)
+	if err := st.SetRefreshMeta(ctx, store.RefreshMeta{
+		Job: "watch", LastRunAt: time.Now().UTC(), SourceMTime: mt, OK: true, PluginAvailable: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Apply migration 0005's mtime reset over this pre-existing row, exactly
+	// as happens when store.Open runs that migration against a real upgrade.
+	if _, err := st.DB().ExecContext(ctx,
+		`UPDATE refresh_meta SET source_mtime = '' WHERE job IN ('library', 'watch')`,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	fs := &fakeSource{events: []source.PlaybackEvent{
+		{At: time.Date(2025, 1, 6, 20, 0, 0, 0, time.UTC), UserID: "u1", ItemID: "m1", ItemType: "movie", Method: "DirectPlay", PlayDurationSec: 3600, Library: "Movies"},
+	}}
+	fs.mtime.Store(&mt) // matches the pre-upgrade mtime -- would skip if not for the reset
+	sc := New(st, fs, config.Config{RefreshLibrary: time.Hour, RefreshWatch: time.Hour}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	if err := sc.RunWatchOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	m, ok, _ := st.GetRefreshMeta(ctx, "watch")
+	if !ok || m.Skipped {
+		t.Fatalf("expected a full run, not a skip: %+v", m)
+	}
+	var daily, heat int
+	st.DB().QueryRowContext(ctx, `SELECT count(*) FROM watch_events_daily`).Scan(&daily)
+	st.DB().QueryRowContext(ctx, `SELECT count(*) FROM agg_watch_heatmap`).Scan(&heat)
+	if daily == 0 || heat == 0 {
+		t.Fatalf("watch aggregates not populated: daily=%d heat=%d", daily, heat)
+	}
+}
+
+// TestRunLibraryOnce_MigrationMtimeResetForcesFullRun is the library-job
+// counterpart of TestRunWatchOnce_MigrationMtimeResetForcesFullRun.
+func TestRunLibraryOnce_MigrationMtimeResetForcesFullRun(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir()+"/s.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	mt := time.Unix(1000, 0)
+	if err := st.SetRefreshMeta(ctx, store.RefreshMeta{
+		Job: "library", LastRunAt: time.Now().UTC(), SourceMTime: mt, OK: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.DB().ExecContext(ctx,
+		`UPDATE refresh_meta SET source_mtime = '' WHERE job IN ('library', 'watch')`,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	fs := &fakeSource{snap: source.LibrarySnapshot{Items: []source.LibraryItem{
+		{Name: "M", Type: "movie", SizeBytes: 1, RuntimeSec: 1, Year: 2020, Library: "Movies", Container: "mkv", Width: 1920, HasVideo: true},
+	}}}
+	fs.mtime.Store(&mt) // matches the pre-upgrade mtime -- would skip if not for the reset
+	sc := New(st, fs, config.Config{RefreshLibrary: time.Hour, RefreshWatch: time.Hour}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	if err := sc.RunLibraryOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if fs.calls.Load() != 1 {
+		t.Fatalf("expected a full run (LibraryFacts called), calls=%d", fs.calls.Load())
+	}
+	m, ok, _ := st.GetRefreshMeta(ctx, "library")
+	if !ok || m.Skipped {
+		t.Fatalf("expected a full run, not a skip: %+v", m)
+	}
+	ov, _ := st.ReadLibraryOverview(ctx, "")
+	if ov.Totals.Items != 1 {
+		t.Fatalf("overview not populated: %+v", ov.Totals)
 	}
 }
 

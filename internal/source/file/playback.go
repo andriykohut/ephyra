@@ -52,40 +52,73 @@ func tableExists(db *sql.DB, name string) bool {
 	return err == nil && n > 0
 }
 
+// resolveLibrariesBatchSize caps how many item ids go into a single IN (...)
+// query. SQLite's SQLITE_MAX_VARIABLE_NUMBER (32766 on the version this
+// project's modernc.org/sqlite ships) limits how many "?" placeholders one
+// query can hold; this is a safe round number well under that.
+const resolveLibrariesBatchSize = 500
+
+// chunkIDs splits ids into slices of at most size elements each, preserving
+// order. size <= 0 is treated as "one chunk" (no batching).
+func chunkIDs(ids []string, size int) [][]string {
+	if size <= 0 || len(ids) <= size {
+		if len(ids) == 0 {
+			return nil
+		}
+		return [][]string{ids}
+	}
+	var chunks [][]string
+	for start := 0; start < len(ids); start += size {
+		end := start + size
+		if end > len(ids) {
+			end = len(ids)
+		}
+		chunks = append(chunks, ids[start:end])
+	}
+	return chunks
+}
+
 // resolveLibraries looks up library names for a set of item ids directly
 // against a jellyfin.db copy, independent of what the Playback Reporting
 // plugin currently reports. Ids not found in BaseItems are simply absent from
-// the result map.
+// the result map. This backs a residual backfill sweep (see ResolveLibraries
+// in file.go), so itemIDs can run into the tens of thousands for a household
+// with years of history -- queried in batches to stay under SQLite's
+// host-parameter limit.
 func resolveLibraries(jdb *sql.DB, itemIDs []string) (map[string]string, error) {
-	if len(itemIDs) == 0 {
-		return map[string]string{}, nil
-	}
-	placeholders := make([]string, len(itemIDs))
-	args := make([]any, len(itemIDs))
-	for i, id := range itemIDs {
-		placeholders[i] = "?"
-		args[i] = id
-	}
-	q := `
-		WITH ` + foldersCTE + `
-		SELECT lower(replace(i.Id,'-','')), COALESCE(f.lib, 'Unknown')
-		FROM BaseItems i
-		LEFT JOIN folders f ON f.fid = i.TopParentId
-		WHERE lower(replace(i.Id,'-','')) IN (` + strings.Join(placeholders, ",") + `)`
-	rows, err := jdb.Query(q, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
 	out := map[string]string{}
-	for rows.Next() {
-		var id, lib string
-		if err := rows.Scan(&id, &lib); err != nil {
+	for _, batch := range chunkIDs(itemIDs, resolveLibrariesBatchSize) {
+		placeholders := make([]string, len(batch))
+		args := make([]any, len(batch))
+		for i, id := range batch {
+			placeholders[i] = "?"
+			args[i] = id
+		}
+		q := `
+			WITH ` + foldersCTE + `
+			SELECT lower(replace(i.Id,'-','')), COALESCE(f.lib, 'Unknown')
+			FROM BaseItems i
+			LEFT JOIN folders f ON f.fid = i.TopParentId
+			WHERE lower(replace(i.Id,'-','')) IN (` + strings.Join(placeholders, ",") + `)`
+		rows, err := jdb.Query(q, args...)
+		if err != nil {
 			return nil, err
 		}
-		out[id] = lib
+		for rows.Next() {
+			var id, lib string
+			if err := rows.Scan(&id, &lib); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			out[id] = lib
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		rows.Close()
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // enrichPlaybackEvents fills UserName / ItemName / SeriesID / SeriesName from a

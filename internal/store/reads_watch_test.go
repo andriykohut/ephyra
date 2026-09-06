@@ -104,18 +104,24 @@ func TestReadWatchStats_LibraryFilter(t *testing.T) {
 				Method: "DirectPlay", Library: "Movies", Plays: 1, WatchSec: 600},
 			{Day: "2025-05-20", UserID: "u1", ItemID: "e1", Scope: "episode", Name: "S1E1",
 				Method: "DirectPlay", Library: "Shows", Plays: 1, WatchSec: 900},
+			{Day: "2025-05-21", UserID: "u2", ItemID: "e2", Scope: "episode", Name: "S1E2",
+				Method: "DirectPlay", Library: "Shows", Plays: 1, WatchSec: 300},
 		},
 		[]aggregate.HeatmapRow{
 			{UserID: "u1", Library: "Movies", DOW: 2, Hour: 20, Plays: 1, WatchSec: 600},
 			{UserID: "u1", Library: "Shows", DOW: 2, Hour: 20, Plays: 1, WatchSec: 900},
+			{UserID: "u2", Library: "Shows", DOW: 3, Hour: 21, Plays: 1, WatchSec: 300},
 		},
 	); err != nil {
 		t.Fatal(err)
 	}
 
 	all := mustRead(t, st, WatchStatsParams{Range: "all", Now: now})
-	if all.Totals.WatchSeconds != 1500 {
+	if all.Totals.WatchSeconds != 1800 {
 		t.Fatalf("all: %d", all.Totals.WatchSeconds)
+	}
+	if len(all.ActiveUsers) != 2 {
+		t.Fatalf("all active_users should include both users: %+v", all.ActiveUsers)
 	}
 	movies := mustRead(t, st, WatchStatsParams{Range: "all", Library: "Movies", Now: now})
 	if movies.Totals.WatchSeconds != 600 {
@@ -127,6 +133,18 @@ func TestReadWatchStats_LibraryFilter(t *testing.T) {
 	}
 	if heatSecMovies != 600 {
 		t.Fatalf("movies heatmap: %d", heatSecMovies)
+	}
+	// active_users must narrow to the library filter: only u1 watched Movies.
+	if len(movies.ActiveUsers) != 1 || movies.ActiveUsers[0].UserID != "u1" {
+		t.Fatalf("movies active_users should narrow to u1 only: %+v", movies.ActiveUsers)
+	}
+
+	// active_users still ignores the user filter even with a library set: u2
+	// never watched Movies, but asking for user=u2 must not narrow the panel
+	// to u2 -- it must still show whoever actually watched Movies (u1).
+	moviesAsU2 := mustRead(t, st, WatchStatsParams{Range: "all", Library: "Movies", User: "u2", Now: now})
+	if len(moviesAsU2.ActiveUsers) != 1 || moviesAsU2.ActiveUsers[0].UserID != "u1" {
+		t.Fatalf("active_users should ignore user filter but honor library: %+v", moviesAsU2.ActiveUsers)
 	}
 }
 

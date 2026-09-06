@@ -127,7 +127,9 @@ func (s *Store) ReadPlaybackEvents(ctx context.Context) ([]source.PlaybackEvent,
 
 // ItemsWithUnknownLibrary returns distinct item ids whose spine rows are
 // still at the 'Unknown' library sentinel — candidates for the watch job's
-// one-time backfill pass.
+// residual backfill sweep. Items that never resolve (e.g. deleted from
+// Jellyfin) stay candidates and get re-queried on every subsequent run, not
+// just once.
 func (s *Store) ItemsWithUnknownLibrary(ctx context.Context) ([]string, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT DISTINCT item_id FROM playback_events WHERE library = 'Unknown'`)
