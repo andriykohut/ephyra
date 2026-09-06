@@ -197,6 +197,49 @@ func TestLibraryOverview_TagsInPayload(t *testing.T) {
 	}
 }
 
+func TestHandleLibraryOverview_LibraryParam(t *testing.T) {
+	now := time.Now()
+	s, st, _ := newTestServer(t, now)
+	ctx := context.Background()
+	if err := st.WriteLibraryAggregates(ctx,
+		map[string]aggregate.LibraryAggregates{
+			"":       {Totals: map[string]float64{"items.total": 6}},
+			"Movies": {Totals: map[string]float64{"items.total": 4}},
+		}, nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetRefreshMeta(ctx, store.RefreshMeta{Job: "library", LastRunAt: now, OK: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		q    string
+		want int64
+	}{
+		{"", 6}, {"?library=all", 6}, {"?library=Movies", 4}, {"?library=Nonexistent", 0},
+	} {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/library/overview"+tc.q, nil)
+		s.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: status=%d body=%s", tc.q, rec.Code, rec.Body.String())
+		}
+		var body struct {
+			Data struct {
+				Totals struct {
+					Items int64 `json:"items"`
+				} `json:"totals"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		if body.Data.Totals.Items != tc.want {
+			t.Errorf("%s: items = %d, want %d", tc.q, body.Data.Totals.Items, tc.want)
+		}
+	}
+}
+
 func TestUnknownAPIPathIs404JSON(t *testing.T) {
 	s, _, _ := newTestServer(t, time.Now())
 	rr := httptest.NewRecorder()

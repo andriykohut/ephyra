@@ -74,6 +74,59 @@ func TestCleanup_CSV(t *testing.T) {
 	}
 }
 
+func TestCleanup_LibraryParam(t *testing.T) {
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	s, st, _ := newTestServer(t, now)
+	ctx := context.Background()
+	rows := []aggregate.CleanupRow{
+		{ItemID: "a", Scope: "movie", Name: "Movie Never A", Library: "Movies", Bytes: 900, AddedAt: "2020-01-01T00:00:00Z"},
+		{ItemID: "b", Scope: "movie", Name: "Movie Never B", Library: "Movies", Bytes: 100, AddedAt: "2024-01-01T00:00:00Z"},
+		{ItemID: "e", Scope: "series", Name: "Show Never E", Library: "Shows", Bytes: 500, Episodes: 5, AddedAt: "2021-01-01T00:00:00Z"},
+	}
+	if err := st.WriteLibraryAggregates(ctx,
+		map[string]aggregate.LibraryAggregates{"": {Totals: map[string]float64{}}}, rows, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetRefreshMeta(ctx, store.RefreshMeta{Job: "library", LastRunAt: now, OK: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		q    string
+		want int64
+	}{
+		{"", 3}, {"&library=all", 3}, {"&library=Movies", 2}, {"&library=Nonexistent", 0},
+	} {
+		rr := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/cleanup?mode=never"+tc.q, nil))
+		if rr.Code != 200 {
+			t.Fatalf("%s: status %d body %s", tc.q, rr.Code, rr.Body)
+		}
+		var env struct {
+			Data store.CleanupResult `json:"data"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &env); err != nil {
+			t.Fatal(err)
+		}
+		if env.Data.MatchCount != tc.want {
+			t.Errorf("%s: match_count = %d, want %d", tc.q, env.Data.MatchCount, tc.want)
+		}
+	}
+
+	// CSV output should also honor the filter.
+	rr := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/cleanup?mode=never&format=csv&library=Movies", nil))
+	if rr.Code != 200 {
+		t.Fatalf("csv: status %d body %s", rr.Code, rr.Body)
+	}
+	if strings.Contains(rr.Body.String(), "Show Never E") {
+		t.Fatalf("csv library filter did not narrow output:\n%s", rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), "Movie Never A") {
+		t.Fatalf("csv missing expected row:\n%s", rr.Body.String())
+	}
+}
+
 func TestCleanup_NotReady(t *testing.T) {
 	s, _, _ := newTestServer(t, time.Now())
 	rr := httptest.NewRecorder()

@@ -24,6 +24,10 @@ func (s *Server) handleWatchStats(w http.ResponseWriter, r *http.Request) {
 	if user == "all" {
 		user = ""
 	}
+	library := q.Get("library")
+	if library == "all" {
+		library = ""
+	}
 
 	_, ok, err := s.st.GetRefreshMeta(ctx, "library")
 	if err != nil {
@@ -35,7 +39,7 @@ func (s *Server) handleWatchStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data, err := s.st.ReadWatchStats(ctx, store.WatchStatsParams{Range: rng, User: user, Now: s.now()})
+	data, err := s.st.ReadWatchStats(ctx, store.WatchStatsParams{Range: rng, User: user, Library: library, Now: s.now()})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", err.Error())
 		return

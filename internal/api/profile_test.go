@@ -176,6 +176,51 @@ func TestHandleProfile_UnknownUser(t *testing.T) {
 	}
 }
 
+func TestHandleProfile_LibraryParam(t *testing.T) {
+	now := time.Date(2025, 5, 2, 0, 0, 0, 0, time.UTC)
+	s, st, _ := newTestServer(t, now)
+	seedForProfile(t, st, now)
+
+	ctx := context.Background()
+	if err := st.WriteProfileAggregates(ctx, map[string]aggregate.ProfileAggregates{
+		"": {
+			Summary: []aggregate.ProfileSummaryRow{
+				{UserID: "u1", Range: "all", WatchSec: 9000, Plays: 12, RewatchPct: 0.25, FirstPlay: "2025-01-01", LastPlay: "2025-05-01"},
+				{UserID: "u1", Range: "30d", WatchSec: 3000, Plays: 4, FirstPlay: "2025-04-10", LastPlay: "2025-05-01"},
+			},
+		},
+		"Movies": {
+			Summary: []aggregate.ProfileSummaryRow{
+				{UserID: "u1", Range: "30d", WatchSec: 1200, Plays: 2, FirstPlay: "2025-04-10", LastPlay: "2025-05-01"},
+			},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		q    string
+		want int64
+	}{
+		{"", 4}, {"&library=all", 4}, {"&library=Movies", 2}, {"&library=Nonexistent", 0},
+	} {
+		rr := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/profile/u1?range=30d"+tc.q, nil))
+		if rr.Code != 200 {
+			t.Fatalf("%s: status %d body %s", tc.q, rr.Code, rr.Body)
+		}
+		var env struct {
+			Data store.Profile `json:"data"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &env); err != nil {
+			t.Fatal(err)
+		}
+		if env.Data.Summary.Plays != tc.want {
+			t.Errorf("%s: plays = %d, want %d", tc.q, env.Data.Summary.Plays, tc.want)
+		}
+	}
+}
+
 func TestHandleProfile_NotReady(t *testing.T) {
 	s, _, _ := newTestServer(t, time.Now())
 	rr := httptest.NewRecorder()

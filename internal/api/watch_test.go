@@ -74,6 +74,51 @@ func TestWatchStats_PluginAbsentStillHasUsersAndCore(t *testing.T) {
 	}
 }
 
+func TestWatchStats_LibraryParam(t *testing.T) {
+	now := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
+	s, st, _ := newTestServer(t, now)
+	ctx := context.Background()
+
+	if err := st.WriteLibraryAggregates(ctx, map[string]aggregate.LibraryAggregates{"": {Totals: map[string]float64{}}},
+		nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.WriteWatchAggregates(ctx,
+		[]aggregate.WatchDailyRow{
+			{Day: "2025-05-20", UserID: "u1", ItemID: "m1", Scope: "movie", Name: "Alpha",
+				Method: "DirectPlay", Library: "Movies", Plays: 1, WatchSec: 600},
+			{Day: "2025-05-20", UserID: "u1", ItemID: "e1", Scope: "episode", Name: "S1E1",
+				Method: "DirectPlay", Library: "Shows", Plays: 1, WatchSec: 900},
+		},
+		nil,
+	); err != nil {
+		t.Fatal(err)
+	}
+	st.SetRefreshMeta(ctx, store.RefreshMeta{Job: "library", LastRunAt: now, OK: true})
+
+	for _, tc := range []struct {
+		q    string
+		want int64
+	}{
+		{"", 1500}, {"&library=all", 1500}, {"&library=Movies", 600}, {"&library=Nonexistent", 0},
+	} {
+		rr := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/watch/stats?range=all"+tc.q, nil))
+		if rr.Code != 200 {
+			t.Fatalf("%s: status %d body %s", tc.q, rr.Code, rr.Body)
+		}
+		var env struct {
+			Data store.WatchStats `json:"data"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &env); err != nil {
+			t.Fatal(err)
+		}
+		if env.Data.Totals.WatchSeconds != tc.want {
+			t.Errorf("%s: watch_seconds = %d, want %d", tc.q, env.Data.Totals.WatchSeconds, tc.want)
+		}
+	}
+}
+
 func TestWatchStats_BadRange(t *testing.T) {
 	now := time.Now()
 	s, st, _ := newTestServer(t, now)

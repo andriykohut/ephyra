@@ -37,8 +37,11 @@ func (s *Server) handleProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO(task-17): thread the real library query param through here.
-	data, ok, err := s.st.ReadProfile(ctx, r.PathValue("userID"), rng, "")
+	library := r.URL.Query().Get("library")
+	if library == "all" {
+		library = ""
+	}
+	data, ok, err := s.st.ReadProfile(ctx, r.PathValue("userID"), rng, library)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", err.Error())
 		return

@@ -17,7 +17,11 @@ func (s *Server) handleLibraryOverview(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "not_ready", "first refresh has not completed")
 		return
 	}
-	ov, err := s.st.ReadLibraryOverview(ctx, "")
+	library := r.URL.Query().Get("library")
+	if library == "all" {
+		library = ""
+	}
+	ov, err := s.st.ReadLibraryOverview(ctx, library)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", err.Error())
 		return
