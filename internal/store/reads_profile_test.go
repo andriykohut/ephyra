@@ -72,6 +72,50 @@ func TestReadProfileList(t *testing.T) {
 	}
 }
 
+func TestReadProfileList_DoesNotFanOutAcrossLibraries(t *testing.T) {
+	ctx := context.Background()
+	st := openStore(t)
+	if _, err := st.DB().ExecContext(ctx,
+		`INSERT INTO dim_user (id, name) VALUES ('u1','alice')`); err != nil {
+		t.Fatal(err)
+	}
+
+	// Two library scopes for the same user in one write call. agg_profile_summary's
+	// PK is (user_id, range, library), so a naive `range = 'all'` join with no
+	// library predicate would match both rows and duplicate the user in the list.
+	if err := st.WriteProfileAggregates(ctx, map[string]aggregate.ProfileAggregates{
+		"": {
+			Summary: []aggregate.ProfileSummaryRow{
+				{UserID: "u1", Range: "all", WatchSec: 9000, Plays: 12, RewatchPct: 0.25, LastPlay: "2025-05-01"},
+			},
+		},
+		"Movies": {
+			Summary: []aggregate.ProfileSummaryRow{
+				{UserID: "u1", Range: "all", WatchSec: 3000, Plays: 2, LastPlay: "2025-05-02"},
+			},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	pl, err := st.ReadProfileList(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var u1Count int
+	for _, u := range pl.Users {
+		if u.ID == "u1" {
+			u1Count++
+			if u.TotalPlays != 12 || u.TotalWatchSec != 9000 {
+				t.Fatalf("u1 entry should reflect the '' (All) scope, got %+v", u)
+			}
+		}
+	}
+	if u1Count != 1 {
+		t.Fatalf("u1 appeared %d times in the list, want 1: %+v", u1Count, pl.Users)
+	}
+}
+
 func TestReadProfile_RangeScopedPlusLifetime(t *testing.T) {
 	ctx := context.Background()
 	st := openStore(t)

@@ -142,7 +142,7 @@ func (s *Store) ReadProfileList(ctx context.Context) (ProfileList, error) {
 		       COALESCE(p.finished_pct, 0), COALESCE(p.rewatch_pct, 0),
 		       COALESCE(p.longest_binge_episodes, 0), COALESCE(p.last_play, '')
 		FROM dim_user d
-		LEFT JOIN agg_profile_summary p ON p.user_id = d.id AND p.range = 'all'
+		LEFT JOIN agg_profile_summary p ON p.user_id = d.id AND p.range = 'all' AND p.library = ''
 		ORDER BY d.name`)
 	if err != nil {
 		return pl, err
