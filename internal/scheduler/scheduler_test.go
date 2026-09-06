@@ -97,7 +97,7 @@ func TestRunLibraryOnce_FullRun(t *testing.T) {
 	if !ok || !m.OK || m.Skipped {
 		t.Fatalf("refresh_meta: %+v ok=%v", m, ok)
 	}
-	ov, _ := st.ReadLibraryOverview(context.Background())
+	ov, _ := st.ReadLibraryOverview(context.Background(), "")
 	if ov.Totals.Items != 1 {
 		t.Fatalf("overview not written: %+v", ov.Totals)
 	}

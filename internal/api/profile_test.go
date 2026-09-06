@@ -18,7 +18,7 @@ func seedForProfile(t *testing.T, st *store.Store, now time.Time) {
 	t.Helper()
 	ctx := context.Background()
 	if err := st.WriteLibraryAggregates(ctx,
-		aggregate.LibraryAggregates{Totals: map[string]float64{}}, nil,
+		map[string]aggregate.LibraryAggregates{"": {Totals: map[string]float64{}}}, nil,
 		[]aggregate.UserRow{{ID: "u1", Name: "alice"}}, nil,
 	); err != nil {
 		t.Fatal(err)

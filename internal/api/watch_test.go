@@ -26,7 +26,7 @@ func TestWatchStats_PluginAbsentStillHasUsersAndCore(t *testing.T) {
 	s, st, _ := newTestServer(t, now)
 	ctx := context.Background()
 
-	if err := st.WriteLibraryAggregates(ctx, aggregate.LibraryAggregates{Totals: map[string]float64{}},
+	if err := st.WriteLibraryAggregates(ctx, map[string]aggregate.LibraryAggregates{"": {Totals: map[string]float64{}}},
 		nil,
 		[]aggregate.UserRow{{ID: "u1", Name: "alice"}},
 		[]aggregate.CorePlayRow{{UserID: "u1", Scope: "movie", ItemID: "m9", Name: "Fav", PlayCount: 9}},

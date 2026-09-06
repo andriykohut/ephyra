@@ -27,7 +27,8 @@ func seedCleanup(t *testing.T) (*Store, time.Time) {
 		{ItemID: "d", Scope: "movie", Name: "Recent", Library: "Movies", Bytes: 700,
 			AddedAt: "2025-01-01T00:00:00Z", LastPlayedAt: "2025-12-01T00:00:00Z"},
 	}
-	if err := s.WriteLibraryAggregates(ctx, aggregate.LibraryAggregates{Totals: map[string]float64{}}, rows, nil, nil); err != nil {
+	if err := s.WriteLibraryAggregates(ctx,
+		map[string]aggregate.LibraryAggregates{"": {Totals: map[string]float64{}}}, rows, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	return s, now
@@ -85,7 +86,7 @@ func TestReadCleanup_EmptyItemsSerializeAsArray(t *testing.T) {
 	}
 	t.Cleanup(func() { s.Close() })
 	if err := s.WriteLibraryAggregates(ctx,
-		aggregate.LibraryAggregates{Totals: map[string]float64{}}, nil, nil, nil); err != nil {
+		map[string]aggregate.LibraryAggregates{"": {Totals: map[string]float64{}}}, nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 

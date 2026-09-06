@@ -108,7 +108,7 @@ func (s *Scheduler) RunLibraryOnce(ctx context.Context) error {
 	cleanup := aggregate.Cleanup(snap)
 	users := aggregate.Users(snap)
 	core := aggregate.CorePlays(snap.UserPlays)
-	if err := s.st.WriteLibraryAggregates(ctx, agg, cleanup, users, core); err != nil {
+	if err := s.st.WriteLibraryAggregates(ctx, map[string]aggregate.LibraryAggregates{"": agg}, cleanup, users, core); err != nil {
 		return s.recordFailure(ctx, "library", mt, start, err)
 	}
 	s.log.Info("library refresh ok",

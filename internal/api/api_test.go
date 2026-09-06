@@ -89,7 +89,7 @@ func TestLibraryOverview_OKAndStaleFlag(t *testing.T) {
 	s, st, _ := newTestServer(t, now)
 	ctx := context.Background()
 
-	if err := st.WriteLibraryAggregates(ctx, sampleAgg(), nil, nil, nil); err != nil {
+	if err := st.WriteLibraryAggregates(ctx, map[string]aggregate.LibraryAggregates{"": sampleAgg()}, nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.SetRefreshMeta(ctx, store.RefreshMeta{Job: "library", LastRunAt: now.Add(-10 * time.Minute), OK: true}); err != nil {
@@ -130,7 +130,7 @@ func TestLibraryOverview_EmptyListsSerializeAsArrays(t *testing.T) {
 	s, st, _ := newTestServer(t, now)
 	ctx := context.Background()
 	if err := st.WriteLibraryAggregates(ctx,
-		aggregate.LibraryAggregates{Totals: map[string]float64{}}, nil, nil, nil); err != nil {
+		map[string]aggregate.LibraryAggregates{"": {Totals: map[string]float64{}}}, nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	st.SetRefreshMeta(ctx, store.RefreshMeta{Job: "library", LastRunAt: now, OK: true})
@@ -167,7 +167,7 @@ func TestLibraryOverview_TagsInPayload(t *testing.T) {
 	now := time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)
 	s, st, _ := newTestServer(t, now)
 	ctx := context.Background()
-	if err := st.WriteLibraryAggregates(ctx, sampleAgg(), nil, nil, nil); err != nil {
+	if err := st.WriteLibraryAggregates(ctx, map[string]aggregate.LibraryAggregates{"": sampleAgg()}, nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	st.SetRefreshMeta(ctx, store.RefreshMeta{Job: "library", LastRunAt: now.Add(-time.Minute), OK: true})

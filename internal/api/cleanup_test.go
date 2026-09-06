@@ -21,7 +21,7 @@ func seedCleanupAPI(t *testing.T, st *store.Store, now time.Time) {
 			AddedAt: "2019-01-01T00:00:00Z", LastPlayedAt: "2023-06-01T00:00:00Z"},
 	}
 	if err := st.WriteLibraryAggregates(context.Background(),
-		aggregate.LibraryAggregates{Totals: map[string]float64{}}, rows, nil, nil); err != nil {
+		map[string]aggregate.LibraryAggregates{"": {Totals: map[string]float64{}}}, rows, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.SetRefreshMeta(context.Background(), store.RefreshMeta{

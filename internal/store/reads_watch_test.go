@@ -23,7 +23,8 @@ func seedWatch(t *testing.T) (*Store, time.Time) {
 		{UserID: "u1", Scope: "movie", ItemID: "m9", Name: "Fav Movie", PlayCount: 12, LastPlayedAt: "2025-01-20T00:00:00Z"},
 		{UserID: "u2", Scope: "series", ItemID: "s9", Name: "Fav Show", PlayCount: 40},
 	}
-	if err := s.WriteLibraryAggregates(ctx, aggregate.LibraryAggregates{Totals: map[string]float64{}}, nil, users, core); err != nil {
+	if err := s.WriteLibraryAggregates(ctx,
+		map[string]aggregate.LibraryAggregates{"": {Totals: map[string]float64{}}}, nil, users, core); err != nil {
 		t.Fatal(err)
 	}
 

@@ -7,10 +7,12 @@ import (
 	"github.com/andriykohut/ephyra/internal/aggregate"
 )
 
-// WriteLibraryAggregates replaces every library-derived row in one transaction,
-// so a reader never sees a half-written set. The library job also owns the
-// cleanup candidates, the user directory, and core play counts.
-func (s *Store) WriteLibraryAggregates(ctx context.Context, a aggregate.LibraryAggregates,
+// WriteLibraryAggregates replaces every library-derived row in one
+// transaction, so a reader never sees a half-written set — including every
+// library's scope: scoped[""] is "All libraries", every other key is one
+// Jellyfin library. cleanup/users/core are not library-scoped (Cleanup and
+// Watch Stats get their own filtering elsewhere).
+func (s *Store) WriteLibraryAggregates(ctx context.Context, scoped map[string]aggregate.LibraryAggregates,
 	cleanup []aggregate.CleanupRow, users []aggregate.UserRow, core []aggregate.CorePlayRow) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -26,6 +28,7 @@ func (s *Store) WriteLibraryAggregates(ctx context.Context, a aggregate.LibraryA
 		`DELETE FROM agg_library_tag_pairs`,
 		`DELETE FROM agg_cleanup`,
 		`DELETE FROM dim_user`,
+		`DELETE FROM dim_library`,
 		`DELETE FROM agg_played_core`,
 	} {
 		if _, err := tx.ExecContext(ctx, q); err != nil {
@@ -33,61 +36,68 @@ func (s *Store) WriteLibraryAggregates(ctx context.Context, a aggregate.LibraryA
 		}
 	}
 
-	if err := insertTotals(ctx, tx, a.Totals); err != nil {
-		return err
-	}
-
-	disks := []struct {
-		name string
-		data []aggregate.DiskBucket
-	}{
-		{"resolution", a.DiskByResolution},
-		{"codec", a.DiskByCodec},
-		{"container", a.DiskByContainer},
-		{"library", a.DiskByLibrary},
-	}
-	for _, d := range disks {
-		for _, b := range d.data {
-			if _, err := tx.ExecContext(ctx,
-				`INSERT INTO agg_disk (dimension, bucket, bytes, items) VALUES (?,?,?,?)`,
-				d.name, b.Bucket, b.Bytes, b.Items); err != nil {
+	for lib, a := range scoped {
+		if lib != "" {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO dim_library (name) VALUES (?)`, lib); err != nil {
 				return err
 			}
 		}
-	}
+		if err := insertTotals(ctx, tx, lib, a.Totals); err != nil {
+			return err
+		}
 
-	distros := []struct {
-		name string
-		data []aggregate.LabeledCount
-	}{
-		{"genre", a.GenresTop},
-		{"decade", a.ByDecade},
-		{"library_items", a.ItemsByLibrary},
-		{"tag", a.TagsTop},
-	}
-	for _, d := range distros {
-		for _, lc := range d.data {
+		disks := []struct {
+			name string
+			data []aggregate.DiskBucket
+		}{
+			{"resolution", a.DiskByResolution},
+			{"codec", a.DiskByCodec},
+			{"container", a.DiskByContainer},
+			{"library", a.DiskByLibrary},
+		}
+		for _, d := range disks {
+			for _, b := range d.data {
+				if _, err := tx.ExecContext(ctx,
+					`INSERT INTO agg_disk (library, dimension, bucket, bytes, items) VALUES (?,?,?,?,?)`,
+					lib, d.name, b.Bucket, b.Bytes, b.Items); err != nil {
+					return err
+				}
+			}
+		}
+
+		distros := []struct {
+			name string
+			data []aggregate.LabeledCount
+		}{
+			{"genre", a.GenresTop},
+			{"decade", a.ByDecade},
+			{"library_items", a.ItemsByLibrary},
+			{"tag", a.TagsTop},
+		}
+		for _, d := range distros {
+			for _, lc := range d.data {
+				if _, err := tx.ExecContext(ctx,
+					`INSERT INTO agg_distribution (library, dimension, bucket, items) VALUES (?,?,?,?)`,
+					lib, d.name, lc.Label, lc.Count); err != nil {
+					return err
+				}
+			}
+		}
+
+		for _, g := range a.Growth {
 			if _, err := tx.ExecContext(ctx,
-				`INSERT INTO agg_distribution (dimension, bucket, items) VALUES (?,?,?)`,
-				d.name, lc.Label, lc.Count); err != nil {
+				`INSERT INTO agg_library_growth (library, month, added_items, added_bytes, cum_items) VALUES (?,?,?,?,?)`,
+				lib, g.Month, g.AddedItems, g.AddedBytes, g.CumItems); err != nil {
 				return err
 			}
 		}
-	}
 
-	for _, g := range a.Growth {
-		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO agg_library_growth (month, added_items, added_bytes, cum_items) VALUES (?,?,?,?)`,
-			g.Month, g.AddedItems, g.AddedBytes, g.CumItems); err != nil {
-			return err
-		}
-	}
-
-	for _, p := range a.TagPairs {
-		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO agg_library_tag_pairs (tag_a, tag_b, items) VALUES (?,?,?)`,
-			p.A, p.B, p.Items); err != nil {
-			return err
+		for _, p := range a.TagPairs {
+			if _, err := tx.ExecContext(ctx,
+				`INSERT INTO agg_library_tag_pairs (library, tag_a, tag_b, items) VALUES (?,?,?,?)`,
+				lib, p.A, p.B, p.Items); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -108,9 +118,9 @@ func (s *Store) WriteLibraryAggregates(ctx context.Context, a aggregate.LibraryA
 	}
 	for _, p := range core {
 		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO agg_played_core (user_id, scope, item_id, name, play_count, last_played_at)
-			VALUES (?,?,?,?,?,?)`,
-			p.UserID, p.Scope, p.ItemID, p.Name, p.PlayCount, nullif(p.LastPlayedAt),
+			INSERT INTO agg_played_core (user_id, scope, item_id, name, play_count, last_played_at, library)
+			VALUES (?,?,?,?,?,?,?)`,
+			p.UserID, p.Scope, p.ItemID, p.Name, p.PlayCount, nullif(p.LastPlayedAt), "",
 		); err != nil {
 			return err
 		}
@@ -127,9 +137,10 @@ func nullif(s string) any {
 	return s
 }
 
-func insertTotals(ctx context.Context, tx *sql.Tx, totals map[string]float64) error {
+func insertTotals(ctx context.Context, tx *sql.Tx, library string, totals map[string]float64) error {
 	for k, v := range totals {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO agg_totals (metric, value) VALUES (?,?)`, k, v); err != nil {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO agg_totals (library, metric, value) VALUES (?,?,?)`, library, k, v); err != nil {
 			return err
 		}
 	}

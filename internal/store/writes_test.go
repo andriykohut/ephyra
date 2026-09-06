@@ -42,6 +42,72 @@ func sampleAggregates() aggregate.LibraryAggregates {
 	}
 }
 
+func TestWriteAndReadLibraryAggregates_PerLibrary(t *testing.T) {
+	ctx := context.Background()
+	s, err := Open(ctx, t.TempDir()+"/s.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	scoped := map[string]aggregate.LibraryAggregates{
+		"": {
+			Totals:         map[string]float64{"items.total": 3},
+			ItemsByLibrary: []aggregate.LabeledCount{{Label: "Movies", Count: 2}, {Label: "Shows", Count: 1}},
+			GenresTop:      []aggregate.LabeledCount{{Label: "Drama", Count: 3}},
+		},
+		"Movies": {
+			Totals:    map[string]float64{"items.total": 2},
+			GenresTop: []aggregate.LabeledCount{{Label: "Drama", Count: 2}},
+		},
+		"Shows": {
+			Totals:    map[string]float64{"items.total": 1},
+			GenresTop: []aggregate.LabeledCount{{Label: "Drama", Count: 1}},
+		},
+	}
+	if err := s.WriteLibraryAggregates(ctx, scoped, nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	all, err := s.ReadLibraryOverview(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if all.Totals.Items != 3 || len(all.GenresTop) != 1 || all.GenresTop[0].Count != 3 {
+		t.Fatalf("all: %+v", all)
+	}
+
+	movies, err := s.ReadLibraryOverview(ctx, "Movies")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if movies.Totals.Items != 2 || movies.GenresTop[0].Count != 2 {
+		t.Fatalf("movies: %+v", movies)
+	}
+
+	shows, err := s.ReadLibraryOverview(ctx, "Shows")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if shows.Totals.Items != 1 || shows.GenresTop[0].Count != 1 {
+		t.Fatalf("shows: %+v", shows)
+	}
+
+	var libs []string
+	rows, err := s.DB().QueryContext(ctx, `SELECT name FROM dim_library ORDER BY name`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var n string
+		rows.Scan(&n)
+		libs = append(libs, n)
+	}
+	if len(libs) != 2 || libs[0] != "Movies" || libs[1] != "Shows" {
+		t.Fatalf("dim_library = %v", libs)
+	}
+}
+
 func TestWriteThenReadLibraryOverview(t *testing.T) {
 	ctx := context.Background()
 	s, err := Open(ctx, t.TempDir()+"/s.db")
@@ -50,10 +116,10 @@ func TestWriteThenReadLibraryOverview(t *testing.T) {
 	}
 	defer s.Close()
 
-	if err := s.WriteLibraryAggregates(ctx, sampleAggregates(), nil, nil, nil); err != nil {
+	if err := s.WriteLibraryAggregates(ctx, map[string]aggregate.LibraryAggregates{"": sampleAggregates()}, nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	ov, err := s.ReadLibraryOverview(ctx)
+	ov, err := s.ReadLibraryOverview(ctx, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,10 +154,10 @@ func TestWriteThenReadLibraryOverview(t *testing.T) {
 	repl := sampleAggregates()
 	repl.Totals["bytes.total"] = 1
 	repl.Growth = []aggregate.GrowthPoint{{Month: "2024-05", AddedItems: 1, AddedBytes: 1, CumItems: 1}}
-	if err := s.WriteLibraryAggregates(ctx, repl, nil, nil, nil); err != nil {
+	if err := s.WriteLibraryAggregates(ctx, map[string]aggregate.LibraryAggregates{"": repl}, nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	ov, _ = s.ReadLibraryOverview(ctx)
+	ov, _ = s.ReadLibraryOverview(ctx, "")
 	if ov.Totals.Bytes != 1 || len(ov.Growth) != 1 || ov.Growth[0].Month != "2024-05" {
 		t.Fatalf("replace failed: %+v", ov)
 	}
@@ -106,10 +172,10 @@ func TestReadLibraryOverview_TagsEmpty(t *testing.T) {
 	defer s.Close()
 
 	if err := s.WriteLibraryAggregates(ctx,
-		aggregate.LibraryAggregates{Totals: map[string]float64{}}, nil, nil, nil); err != nil {
+		map[string]aggregate.LibraryAggregates{"": {Totals: map[string]float64{}}}, nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	ov, err := s.ReadLibraryOverview(ctx)
+	ov, err := s.ReadLibraryOverview(ctx, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +204,7 @@ func TestWriteLibraryExtrasRoundTrip(t *testing.T) {
 	users := []aggregate.UserRow{{ID: "u1", Name: "alice"}}
 	core := []aggregate.CorePlayRow{{UserID: "u1", Scope: "movie", ItemID: "m1", Name: "Alpha", PlayCount: 3}}
 
-	if err := s.WriteLibraryAggregates(ctx, base, cleanup, users, core); err != nil {
+	if err := s.WriteLibraryAggregates(ctx, map[string]aggregate.LibraryAggregates{"": base}, cleanup, users, core); err != nil {
 		t.Fatal(err)
 	}
 

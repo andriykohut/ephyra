@@ -53,11 +53,11 @@ type LibraryOverview struct {
 	} `json:"tags"`
 }
 
-func (s *Store) ReadLibraryOverview(ctx context.Context) (LibraryOverview, error) {
+func (s *Store) ReadLibraryOverview(ctx context.Context, library string) (LibraryOverview, error) {
 	var ov LibraryOverview
 
 	totals := map[string]float64{}
-	rows, err := s.db.QueryContext(ctx, `SELECT metric, value FROM agg_totals`)
+	rows, err := s.db.QueryContext(ctx, `SELECT metric, value FROM agg_totals WHERE library = ?`, library)
 	if err != nil {
 		return ov, err
 	}
@@ -81,37 +81,37 @@ func (s *Store) ReadLibraryOverview(ctx context.Context) (LibraryOverview, error
 	ov.Tags.Coverage.Tagged = int64(totals["tags.tagged_items"])
 	ov.Tags.Coverage.Total = int64(totals["tags.total_items"])
 
-	if ov.DiskByResolution, err = s.readDisk(ctx, "resolution"); err != nil {
+	if ov.DiskByResolution, err = s.readDisk(ctx, library, "resolution"); err != nil {
 		return ov, err
 	}
-	if ov.DiskByCodec, err = s.readDisk(ctx, "codec"); err != nil {
+	if ov.DiskByCodec, err = s.readDisk(ctx, library, "codec"); err != nil {
 		return ov, err
 	}
-	if ov.DiskByContainer, err = s.readDisk(ctx, "container"); err != nil {
+	if ov.DiskByContainer, err = s.readDisk(ctx, library, "container"); err != nil {
 		return ov, err
 	}
-	if ov.DiskByLibrary, err = s.readDisk(ctx, "library"); err != nil {
+	if ov.DiskByLibrary, err = s.readDisk(ctx, library, "library"); err != nil {
 		return ov, err
 	}
 
-	if ov.GenresTop, err = s.readDistro(ctx, "genre", false); err != nil {
+	if ov.GenresTop, err = s.readDistro(ctx, library, "genre", false); err != nil {
 		return ov, err
 	}
-	if ov.ByDecade, err = s.readDistro(ctx, "decade", true); err != nil {
+	if ov.ByDecade, err = s.readDistro(ctx, library, "decade", true); err != nil {
 		return ov, err
 	}
-	if ov.Totals.ItemsByLibrary, err = s.readDistro(ctx, "library_items", false); err != nil {
+	if ov.Totals.ItemsByLibrary, err = s.readDistro(ctx, library, "library_items", false); err != nil {
 		return ov, err
 	}
-	if ov.Tags.Top, err = s.readDistro(ctx, "tag", false); err != nil {
+	if ov.Tags.Top, err = s.readDistro(ctx, library, "tag", false); err != nil {
 		return ov, err
 	}
-	if ov.Tags.Pairs, err = s.readTagPairs(ctx); err != nil {
+	if ov.Tags.Pairs, err = s.readTagPairs(ctx, library); err != nil {
 		return ov, err
 	}
 
 	gr, err := s.db.QueryContext(ctx,
-		`SELECT month, added_items, added_bytes, cum_items FROM agg_library_growth ORDER BY month ASC`)
+		`SELECT month, added_items, added_bytes, cum_items FROM agg_library_growth WHERE library = ? ORDER BY month ASC`, library)
 	if err != nil {
 		return ov, err
 	}
@@ -140,9 +140,9 @@ func (s *Store) ReadLibraryOverview(ctx context.Context) (LibraryOverview, error
 	return ov, nil
 }
 
-func (s *Store) readTagPairs(ctx context.Context) ([]TagPairDTO, error) {
+func (s *Store) readTagPairs(ctx context.Context, library string) ([]TagPairDTO, error) {
 	r, err := s.db.QueryContext(ctx,
-		`SELECT tag_a, tag_b, items FROM agg_library_tag_pairs ORDER BY items DESC, tag_a, tag_b`)
+		`SELECT tag_a, tag_b, items FROM agg_library_tag_pairs WHERE library = ? ORDER BY items DESC, tag_a, tag_b`, library)
 	if err != nil {
 		return nil, err
 	}
@@ -158,8 +158,9 @@ func (s *Store) readTagPairs(ctx context.Context) ([]TagPairDTO, error) {
 	return out, r.Err()
 }
 
-func (s *Store) readDisk(ctx context.Context, dim string) ([]aggregate.DiskBucket, error) {
-	r, err := s.db.QueryContext(ctx, `SELECT bucket, bytes, items FROM agg_disk WHERE dimension = ?`, dim)
+func (s *Store) readDisk(ctx context.Context, library, dim string) ([]aggregate.DiskBucket, error) {
+	r, err := s.db.QueryContext(ctx,
+		`SELECT bucket, bytes, items FROM agg_disk WHERE library = ? AND dimension = ?`, library, dim)
 	if err != nil {
 		return nil, err
 	}
@@ -181,8 +182,9 @@ func (s *Store) readDisk(ctx context.Context, dim string) ([]aggregate.DiskBucke
 	return out, r.Err()
 }
 
-func (s *Store) readDistro(ctx context.Context, dim string, chrono bool) ([]aggregate.LabeledCount, error) {
-	r, err := s.db.QueryContext(ctx, `SELECT bucket, items FROM agg_distribution WHERE dimension = ?`, dim)
+func (s *Store) readDistro(ctx context.Context, library, dim string, chrono bool) ([]aggregate.LabeledCount, error) {
+	r, err := s.db.QueryContext(ctx,
+		`SELECT bucket, items FROM agg_distribution WHERE library = ? AND dimension = ?`, library, dim)
 	if err != nil {
 		return nil, err
 	}
