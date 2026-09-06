@@ -93,6 +93,43 @@ func TestReadWatchStats_RangeAndUserFilters(t *testing.T) {
 	}
 }
 
+func TestReadWatchStats_LibraryFilter(t *testing.T) {
+	ctx := context.Background()
+	st := openStore(t)
+	now := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
+
+	if err := st.WriteWatchAggregates(ctx,
+		[]aggregate.WatchDailyRow{
+			{Day: "2025-05-20", UserID: "u1", ItemID: "m1", Scope: "movie", Name: "Alpha",
+				Method: "DirectPlay", Library: "Movies", Plays: 1, WatchSec: 600},
+			{Day: "2025-05-20", UserID: "u1", ItemID: "e1", Scope: "episode", Name: "S1E1",
+				Method: "DirectPlay", Library: "Shows", Plays: 1, WatchSec: 900},
+		},
+		[]aggregate.HeatmapRow{
+			{UserID: "u1", Library: "Movies", DOW: 2, Hour: 20, Plays: 1, WatchSec: 600},
+			{UserID: "u1", Library: "Shows", DOW: 2, Hour: 20, Plays: 1, WatchSec: 900},
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	all := mustRead(t, st, WatchStatsParams{Range: "all", Now: now})
+	if all.Totals.WatchSeconds != 1500 {
+		t.Fatalf("all: %d", all.Totals.WatchSeconds)
+	}
+	movies := mustRead(t, st, WatchStatsParams{Range: "all", Library: "Movies", Now: now})
+	if movies.Totals.WatchSeconds != 600 {
+		t.Fatalf("movies: %d", movies.Totals.WatchSeconds)
+	}
+	var heatSecMovies int64
+	for _, h := range movies.Heatmap {
+		heatSecMovies += h.WatchSec
+	}
+	if heatSecMovies != 600 {
+		t.Fatalf("movies heatmap: %d", heatSecMovies)
+	}
+}
+
 func TestReadWatchStats_PluginMetaAbsent(t *testing.T) {
 	s, now := seedWatch(t)
 	w := mustRead(t, s, WatchStatsParams{Range: "30d", Now: now})

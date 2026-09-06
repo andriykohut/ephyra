@@ -7,9 +7,10 @@ import (
 )
 
 type WatchStatsParams struct {
-	Range string
-	User  string // canonical id, or "" for all
-	Now   time.Time
+	Range   string
+	User    string // canonical id, or "" for all
+	Library string // "" for all
+	Now     time.Time
 }
 
 type WatchUser struct {
@@ -158,7 +159,7 @@ func (s *Store) ReadWatchStats(ctx context.Context, p WatchStatsParams) (WatchSt
 		ws.Coverage.LastPlay = *last
 	}
 
-	if err := s.readCore(ctx, &ws, p.User); err != nil {
+	if err := s.readCore(ctx, &ws, p.User, p.Library); err != nil {
 		return ws, err
 	}
 
@@ -172,6 +173,10 @@ func (s *Store) ReadWatchStats(ctx context.Context, p WatchStatsParams) (WatchSt
 	if p.User != "" {
 		scoped += " AND user_id = ?"
 		scopedArgs = append(scopedArgs, p.User)
+	}
+	if p.Library != "" {
+		scoped += " AND library = ?"
+		scopedArgs = append(scopedArgs, p.Library)
 	}
 
 	var dp, vt int64
@@ -330,6 +335,14 @@ func (s *Store) ReadWatchStats(ctx context.Context, p WatchStatsParams) (WatchSt
 	if p.User != "" {
 		hWhere, hArgs = "user_id = ?", []any{p.User}
 	}
+	if p.Library != "" {
+		if hWhere == "1=1" {
+			hWhere, hArgs = "library = ?", []any{p.Library}
+		} else {
+			hWhere += " AND library = ?"
+			hArgs = append(hArgs, p.Library)
+		}
+	}
 	hrows, err := s.db.QueryContext(ctx, `
 		SELECT dow, hour, SUM(watch_sec), SUM(plays)
 		FROM agg_watch_heatmap WHERE `+hWhere+`
@@ -388,18 +401,30 @@ func (s *Store) readTop(ctx context.Context, dst *[]WatchTitle, q string, args [
 	return rows.Err()
 }
 
-func (s *Store) readCore(ctx context.Context, ws *WatchStats, user string) error {
+func (s *Store) readCore(ctx context.Context, ws *WatchStats, user, library string) error {
 	var q string
 	var args []any
+	where := "1=1"
+	if user != "" {
+		where = "user_id = ?"
+		args = append(args, user)
+	}
+	if library != "" {
+		if where == "1=1" {
+			where = "library = ?"
+		} else {
+			where += " AND library = ?"
+		}
+		args = append(args, library)
+	}
 	if user == "" {
 		q = `SELECT scope, item_id, MAX(name), SUM(play_count), COALESCE(MAX(last_played_at),'')
-		     FROM agg_played_core GROUP BY item_id, scope
+		     FROM agg_played_core WHERE ` + where + ` GROUP BY item_id, scope
 		     ORDER BY SUM(play_count) DESC, MAX(name) LIMIT 15`
 	} else {
 		q = `SELECT scope, item_id, name, play_count, COALESCE(last_played_at,'')
-		     FROM agg_played_core WHERE user_id = ?
+		     FROM agg_played_core WHERE ` + where + `
 		     ORDER BY play_count DESC, name LIMIT 15`
-		args = append(args, user)
 	}
 	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
