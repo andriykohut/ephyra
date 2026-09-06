@@ -14,7 +14,7 @@ func seedProfile(t *testing.T, st *Store) {
 		`INSERT INTO dim_user (id, name) VALUES ('u1','alice'), ('u2','bob')`); err != nil {
 		t.Fatal(err)
 	}
-	agg := aggregate.ProfileAggregates{
+	agg := map[string]aggregate.ProfileAggregates{"": {
 		Summary: []aggregate.ProfileSummaryRow{
 			{UserID: "u1", Range: "all", WatchSec: 9000, Plays: 12, DistinctTitles: 5, DaysActive: 7,
 				FinishedPct: 0.6, BailedPct: 0.1, RewatchPct: 0.25,
@@ -43,7 +43,7 @@ func seedProfile(t *testing.T, st *Store) {
 			{Dim: "genre", Key: "Drama", WatchSec: 1000},
 			{Dim: "genre", Key: "Comedy", WatchSec: 4000},
 		},
-	}
+	}}
 	if err := st.WriteProfileAggregates(ctx, agg); err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func TestReadProfile_RangeScopedPlusLifetime(t *testing.T) {
 	st := openStore(t)
 	seedProfile(t, st)
 
-	p, ok, err := st.ReadProfile(ctx, "u1", "30d")
+	p, ok, err := st.ReadProfile(ctx, "u1", "30d", "")
 	if err != nil || !ok {
 		t.Fatalf("ok=%v err=%v", ok, err)
 	}
@@ -106,7 +106,7 @@ func TestReadProfile_TagsAndOverlap(t *testing.T) {
 	if err := st.SetRefreshMeta(ctx, RefreshMeta{Job: "watch", OK: true, PluginAvailable: true}); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.WriteProfileAggregates(ctx, aggregate.ProfileAggregates{
+	if err := st.WriteProfileAggregates(ctx, map[string]aggregate.ProfileAggregates{"": {
 		Summary: []aggregate.ProfileSummaryRow{{UserID: "u1", Range: "all", Plays: 5, WatchSec: 9000}},
 		Taste: []aggregate.ProfileTasteRow{
 			{UserID: "u1", Range: "all", Dim: "tag", Key: "heist", WatchSec: 8000, Plays: 5},
@@ -119,11 +119,11 @@ func TestReadProfile_TagsAndOverlap(t *testing.T) {
 		TagOverlap: []aggregate.ProfileTagOverlapRow{
 			{UserA: "u1", UserB: "u2", Range: "all", Cosine: 0.5, Shared: []string{"heist"}},
 		},
-	}); err != nil {
+	}}); err != nil {
 		t.Fatal(err)
 	}
 
-	p, ok, err := st.ReadProfile(ctx, "u1", "all")
+	p, ok, err := st.ReadProfile(ctx, "u1", "all", "")
 	if err != nil || !ok {
 		t.Fatalf("read: ok=%v err=%v", ok, err)
 	}
@@ -138,7 +138,7 @@ func TestReadProfile_TagsAndOverlap(t *testing.T) {
 		t.Fatalf("tag_overlap: %+v", p.TagOverlap)
 	}
 
-	p2, _, _ := st.ReadProfile(ctx, "u2", "all")
+	p2, _, _ := st.ReadProfile(ctx, "u2", "all", "")
 	if p2.TagOverlap == nil {
 		t.Fatalf("tag_overlap must be [] not nil")
 	}
@@ -151,7 +151,7 @@ func TestReadProfile_UnknownUser(t *testing.T) {
 	ctx := context.Background()
 	st := openStore(t)
 	seedProfile(t, st)
-	_, ok, err := st.ReadProfile(ctx, "nope", "all")
+	_, ok, err := st.ReadProfile(ctx, "nope", "all", "")
 	if err != nil || ok {
 		t.Fatalf("want ok=false err=nil, got ok=%v err=%v", ok, err)
 	}

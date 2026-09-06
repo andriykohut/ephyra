@@ -11,20 +11,20 @@ func TestWriteProfileAggregates_RewriteSemantics(t *testing.T) {
 	ctx := context.Background()
 	st := openStore(t)
 
-	first := aggregate.ProfileAggregates{
+	first := map[string]aggregate.ProfileAggregates{"": {
 		Summary: []aggregate.ProfileSummaryRow{{UserID: "u1", Range: "all", Plays: 10}},
 		Completion: []aggregate.ProfileCompletionRow{
 			{UserID: "u1", Range: "30d", Scope: "movie", Bucket: "finished", Count: 3},
 		},
 		Baseline: []aggregate.TasteBaselineRow{{Dim: "genre", Key: "Drama", WatchSec: 999}},
-	}
+	}}
 	if err := st.WriteProfileAggregates(ctx, first); err != nil {
 		t.Fatal(err)
 	}
 
-	second := aggregate.ProfileAggregates{
+	second := map[string]aggregate.ProfileAggregates{"": {
 		Summary: []aggregate.ProfileSummaryRow{{UserID: "u1", Range: "all", Plays: 20}},
-	}
+	}}
 	if err := st.WriteProfileAggregates(ctx, second); err != nil {
 		t.Fatal(err)
 	}
@@ -38,11 +38,56 @@ func TestWriteProfileAggregates_RewriteSemantics(t *testing.T) {
 	}
 }
 
+func TestWriteAndReadProfileAggregates_PerLibrary(t *testing.T) {
+	ctx := context.Background()
+	st := openStore(t)
+	if _, err := st.DB().ExecContext(ctx, `INSERT INTO dim_user (id, name) VALUES ('u1','Alice')`); err != nil {
+		t.Fatal(err)
+	}
+
+	scoped := map[string]aggregate.ProfileAggregates{
+		"": {
+			Summary: []aggregate.ProfileSummaryRow{{UserID: "u1", Range: "all", WatchSec: 1500, Plays: 2}},
+		},
+		"Movies": {
+			Summary: []aggregate.ProfileSummaryRow{{UserID: "u1", Range: "all", WatchSec: 600, Plays: 1}},
+		},
+	}
+	if err := st.WriteProfileAggregates(ctx, scoped); err != nil {
+		t.Fatal(err)
+	}
+
+	all, ok, err := st.ReadProfile(ctx, "u1", "all", "")
+	if err != nil || !ok {
+		t.Fatalf("all: ok=%v err=%v", ok, err)
+	}
+	if all.Summary.WatchSec != 1500 {
+		t.Fatalf("all watch_sec = %d", all.Summary.WatchSec)
+	}
+
+	movies, ok, err := st.ReadProfile(ctx, "u1", "all", "Movies")
+	if err != nil || !ok {
+		t.Fatalf("movies: ok=%v err=%v", ok, err)
+	}
+	if movies.Summary.WatchSec != 600 {
+		t.Fatalf("movies watch_sec = %d", movies.Summary.WatchSec)
+	}
+
+	// A library with no data for this user still returns ok=true, zero-valued.
+	shows, ok, err := st.ReadProfile(ctx, "u1", "all", "Shows")
+	if err != nil || !ok {
+		t.Fatalf("shows: ok=%v err=%v", ok, err)
+	}
+	if shows.Summary.WatchSec != 0 {
+		t.Fatalf("shows should be zero-valued, got %d", shows.Summary.WatchSec)
+	}
+}
+
 func TestWriteProfile_TagOverlapAndTagTaste(t *testing.T) {
 	ctx := context.Background()
 	st := openStore(t)
 
-	err := st.WriteProfileAggregates(ctx, aggregate.ProfileAggregates{
+	err := st.WriteProfileAggregates(ctx, map[string]aggregate.ProfileAggregates{"": {
 		Taste: []aggregate.ProfileTasteRow{
 			{UserID: "u1", Range: "all", Dim: "tag", Key: "heist", WatchSec: 3000, Plays: 2},
 		},
@@ -52,7 +97,7 @@ func TestWriteProfile_TagOverlapAndTagTaste(t *testing.T) {
 		TagOverlap: []aggregate.ProfileTagOverlapRow{
 			{UserA: "u1", UserB: "u2", Range: "all", Cosine: 0.62, Shared: []string{"heist", "vault"}},
 		},
-	})
+	}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +122,7 @@ func TestWriteProfile_TagOverlapAndTagTaste(t *testing.T) {
 		t.Fatalf("overlap row: %s %s %v %q", ua, ub, cos, shared)
 	}
 
-	if err := st.WriteProfileAggregates(ctx, aggregate.ProfileAggregates{}); err != nil {
+	if err := st.WriteProfileAggregates(ctx, map[string]aggregate.ProfileAggregates{}); err != nil {
 		t.Fatal(err)
 	}
 	var n int

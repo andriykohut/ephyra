@@ -166,7 +166,7 @@ func (s *Store) ReadProfileList(ctx context.Context) (ProfileList, error) {
 // ReadProfile is one user's panels for a range. ok is false when userID is not
 // in dim_user. Range-scoped panels honour rng; rewatch / binge / the summary's
 // rewatch_pct + longest_binge are lifetime and always come from the 'all' row.
-func (s *Store) ReadProfile(ctx context.Context, userID, rng string) (Profile, bool, error) {
+func (s *Store) ReadProfile(ctx context.Context, userID, rng, library string) (Profile, bool, error) {
 	out := Profile{Range: rng, User: ProfileUser{ID: userID}}
 
 	err := s.db.QueryRowContext(ctx, `SELECT name FROM dim_user WHERE id = ?`, userID).Scan(&out.User.Name)
@@ -177,25 +177,25 @@ func (s *Store) ReadProfile(ctx context.Context, userID, rng string) (Profile, b
 		return Profile{}, false, err
 	}
 
-	if err := s.readProfileSummary(ctx, &out, userID, rng); err != nil {
+	if err := s.readProfileSummary(ctx, &out, userID, rng, library); err != nil {
 		return Profile{}, false, err
 	}
-	if err := s.readProfileCompletion(ctx, &out, userID, rng); err != nil {
+	if err := s.readProfileCompletion(ctx, &out, userID, rng, library); err != nil {
 		return Profile{}, false, err
 	}
-	if err := s.readProfileAbandoned(ctx, &out, userID, rng); err != nil {
+	if err := s.readProfileAbandoned(ctx, &out, userID, rng, library); err != nil {
 		return Profile{}, false, err
 	}
-	if err := s.readProfileRewatch(ctx, &out, userID); err != nil {
+	if err := s.readProfileRewatch(ctx, &out, userID, library); err != nil {
 		return Profile{}, false, err
 	}
-	if err := s.readProfileBinge(ctx, &out, userID); err != nil {
+	if err := s.readProfileBinge(ctx, &out, userID, library); err != nil {
 		return Profile{}, false, err
 	}
-	if err := s.readProfileTaste(ctx, &out, userID, rng); err != nil {
+	if err := s.readProfileTaste(ctx, &out, userID, rng, library); err != nil {
 		return Profile{}, false, err
 	}
-	if err := s.readProfileTagOverlap(ctx, &out, userID, rng); err != nil {
+	if err := s.readProfileTagOverlap(ctx, &out, userID, rng, library); err != nil {
 		return Profile{}, false, err
 	}
 	out.Taste.SignatureGenres = signatureGenres(out.Taste.Genre, out.Baseline.Genre)
@@ -219,11 +219,11 @@ func (s *Store) ReadProfile(ctx context.Context, userID, rng string) (Profile, b
 	return out, true, nil
 }
 
-func (s *Store) readProfileSummary(ctx context.Context, out *Profile, userID, rng string) error {
+func (s *Store) readProfileSummary(ctx context.Context, out *Profile, userID, rng, library string) error {
 	err := s.db.QueryRowContext(ctx, `
 		SELECT watch_sec, plays, distinct_titles, days_active, finished_pct, bailed_pct,
 		       show_of_range_series_id, show_of_range_series_name, first_play, last_play
-		FROM agg_profile_summary WHERE user_id = ? AND range = ?`, userID, rng,
+		FROM agg_profile_summary WHERE user_id = ? AND range = ? AND library = ?`, userID, rng, library,
 	).Scan(&out.Summary.WatchSec, &out.Summary.Plays, &out.Summary.DistinctTitles,
 		&out.Summary.DaysActive, &out.Summary.FinishedPct, &out.Summary.BailedPct,
 		&out.Summary.ShowOfRange.SeriesID, &out.Summary.ShowOfRange.SeriesName,
@@ -238,7 +238,7 @@ func (s *Store) readProfileSummary(ctx context.Context, out *Profile, userID, rn
 	var lbs string
 	e := s.db.QueryRowContext(ctx, `
 		SELECT rewatch_pct, longest_binge_episodes, longest_binge_series_name
-		FROM agg_profile_summary WHERE user_id = ? AND range = 'all'`, userID,
+		FROM agg_profile_summary WHERE user_id = ? AND range = 'all' AND library = ?`, userID, library,
 	).Scan(&rp, &lbe, &lbs)
 	if e != nil && e != sql.ErrNoRows {
 		return e
@@ -248,10 +248,10 @@ func (s *Store) readProfileSummary(ctx context.Context, out *Profile, userID, rn
 	return nil
 }
 
-func (s *Store) readProfileCompletion(ctx context.Context, out *Profile, userID, rng string) error {
+func (s *Store) readProfileCompletion(ctx context.Context, out *Profile, userID, rng, library string) error {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT scope, bucket, count FROM agg_profile_completion
-		WHERE user_id = ? AND range = ? ORDER BY scope, bucket`, userID, rng)
+		WHERE user_id = ? AND range = ? AND library = ? ORDER BY scope, bucket`, userID, rng, library)
 	if err != nil {
 		return err
 	}
@@ -266,10 +266,10 @@ func (s *Store) readProfileCompletion(ctx context.Context, out *Profile, userID,
 	return rows.Err()
 }
 
-func (s *Store) readProfileAbandoned(ctx context.Context, out *Profile, userID, rng string) error {
+func (s *Store) readProfileAbandoned(ctx context.Context, out *Profile, userID, rng, library string) error {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT scope, item_id, name, series_name, bailed_count FROM agg_profile_abandoned
-		WHERE user_id = ? AND range = ? ORDER BY bailed_count DESC, item_id`, userID, rng)
+		WHERE user_id = ? AND range = ? AND library = ? ORDER BY bailed_count DESC, item_id`, userID, rng, library)
 	if err != nil {
 		return err
 	}
@@ -284,10 +284,10 @@ func (s *Store) readProfileAbandoned(ctx context.Context, out *Profile, userID, 
 	return rows.Err()
 }
 
-func (s *Store) readProfileRewatch(ctx context.Context, out *Profile, userID string) error {
+func (s *Store) readProfileRewatch(ctx context.Context, out *Profile, userID, library string) error {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT scope, item_id, name, series_name, watch_days FROM agg_profile_rewatch
-		WHERE user_id = ? ORDER BY watch_days DESC, item_id`, userID)
+		WHERE user_id = ? AND library = ? ORDER BY watch_days DESC, item_id`, userID, library)
 	if err != nil {
 		return err
 	}
@@ -302,10 +302,10 @@ func (s *Store) readProfileRewatch(ctx context.Context, out *Profile, userID str
 	return rows.Err()
 }
 
-func (s *Store) readProfileBinge(ctx context.Context, out *Profile, userID string) error {
+func (s *Store) readProfileBinge(ctx context.Context, out *Profile, userID, library string) error {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT series_id, series_name, run_episodes, run_start, run_end FROM agg_profile_binge
-		WHERE user_id = ? ORDER BY run_episodes DESC, run_end DESC`, userID)
+		WHERE user_id = ? AND library = ? ORDER BY run_episodes DESC, run_end DESC`, userID, library)
 	if err != nil {
 		return err
 	}
@@ -322,10 +322,10 @@ func (s *Store) readProfileBinge(ctx context.Context, out *Profile, userID strin
 
 // readProfileTaste fills out.Taste.{Genre,Decade,Length} for the range and
 // out.Baseline.* library-wide.
-func (s *Store) readProfileTaste(ctx context.Context, out *Profile, userID, rng string) error {
+func (s *Store) readProfileTaste(ctx context.Context, out *Profile, userID, rng, library string) error {
 	trows, err := s.db.QueryContext(ctx, `
 		SELECT dim, key, watch_sec, plays FROM agg_profile_taste
-		WHERE user_id = ? AND range = ? ORDER BY dim, watch_sec DESC, key`, userID, rng)
+		WHERE user_id = ? AND range = ? AND library = ? ORDER BY dim, watch_sec DESC, key`, userID, rng, library)
 	if err != nil {
 		return err
 	}
@@ -352,7 +352,7 @@ func (s *Store) readProfileTaste(ctx context.Context, out *Profile, userID, rng 
 	}
 
 	brows, err := s.db.QueryContext(ctx, `
-		SELECT dim, key, watch_sec FROM agg_taste_baseline ORDER BY dim, watch_sec DESC, key`)
+		SELECT dim, key, watch_sec FROM agg_taste_baseline WHERE library = ? ORDER BY dim, watch_sec DESC, key`, library)
 	if err != nil {
 		return err
 	}
@@ -379,15 +379,15 @@ func (s *Store) readProfileTaste(ctx context.Context, out *Profile, userID, rng 
 
 // readProfileTagOverlap fills out.TagOverlap: this user vs every other user with
 // a stored pair for the range, the other user reported and named.
-func (s *Store) readProfileTagOverlap(ctx context.Context, out *Profile, userID, rng string) error {
+func (s *Store) readProfileTagOverlap(ctx context.Context, out *Profile, userID, rng, library string) error {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT CASE WHEN o.user_a = ? THEN o.user_b ELSE o.user_a END AS other,
 		       COALESCE(d.name, ''), o.cosine, o.shared
 		FROM agg_profile_tag_overlap o
 		LEFT JOIN dim_user d
 		  ON d.id = CASE WHEN o.user_a = ? THEN o.user_b ELSE o.user_a END
-		WHERE (o.user_a = ? OR o.user_b = ?) AND o.range = ?
-		ORDER BY o.cosine DESC, other`, userID, userID, userID, userID, rng)
+		WHERE (o.user_a = ? OR o.user_b = ?) AND o.range = ? AND o.library = ?
+		ORDER BY o.cosine DESC, other`, userID, userID, userID, userID, rng, library)
 	if err != nil {
 		return err
 	}

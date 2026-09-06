@@ -26,7 +26,7 @@ func seedForProfile(t *testing.T, st *store.Store, now time.Time) {
 	st.SetRefreshMeta(ctx, store.RefreshMeta{Job: "library", LastRunAt: now.Add(-time.Minute), OK: true})
 	st.SetRefreshMeta(ctx, store.RefreshMeta{Job: "watch", LastRunAt: now.Add(-time.Minute), OK: true, PluginAvailable: true})
 
-	if err := st.WriteProfileAggregates(ctx, aggregate.ProfileAggregates{
+	if err := st.WriteProfileAggregates(ctx, map[string]aggregate.ProfileAggregates{"": {
 		Summary: []aggregate.ProfileSummaryRow{
 			{UserID: "u1", Range: "all", WatchSec: 9000, Plays: 12, RewatchPct: 0.25, FirstPlay: "2025-01-01", LastPlay: "2025-05-01"},
 			{UserID: "u1", Range: "30d", WatchSec: 3000, Plays: 4, FirstPlay: "2025-04-10", LastPlay: "2025-05-01"},
@@ -34,7 +34,7 @@ func seedForProfile(t *testing.T, st *store.Store, now time.Time) {
 		Completion: []aggregate.ProfileCompletionRow{
 			{UserID: "u1", Range: "30d", Scope: "movie", Bucket: "finished", Count: 2},
 		},
-	}); err != nil {
+	}}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -97,7 +97,7 @@ func TestHandleProfile_TagsInPayload(t *testing.T) {
 	seedForProfile(t, st, now)
 
 	ctx := context.Background()
-	if err := st.WriteProfileAggregates(ctx, aggregate.ProfileAggregates{
+	if err := st.WriteProfileAggregates(ctx, map[string]aggregate.ProfileAggregates{"": {
 		Summary: []aggregate.ProfileSummaryRow{{UserID: "u1", Range: "all", Plays: 5, WatchSec: 9000}},
 		Taste: []aggregate.ProfileTasteRow{
 			{UserID: "u1", Range: "all", Dim: "tag", Key: "heist", WatchSec: 8000, Plays: 5},
@@ -107,7 +107,7 @@ func TestHandleProfile_TagsInPayload(t *testing.T) {
 			{Dim: "tag", Key: "heist", WatchSec: 1000},
 			{Dim: "tag", Key: "romance", WatchSec: 5000},
 		},
-	}); err != nil {
+	}}); err != nil {
 		t.Fatal(err)
 	}
 
