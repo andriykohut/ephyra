@@ -72,8 +72,8 @@ func (s *Store) AppendPlaybackEvents(ctx context.Context, evs []source.PlaybackE
 	const q = `
 		INSERT INTO playback_events
 		  (at, user_id, item_id, item_type, method, play_duration_sec,
-		   item_name, series_id, series_name, item_runtime_sec, item_year, item_genres, item_tags, dedup_hash)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		   item_name, series_id, series_name, item_runtime_sec, item_year, item_genres, item_tags, library, dedup_hash)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(dedup_hash) DO UPDATE SET
 		  item_name        = excluded.item_name,
 		  series_id        = excluded.series_id,
@@ -81,12 +81,13 @@ func (s *Store) AppendPlaybackEvents(ctx context.Context, evs []source.PlaybackE
 		  item_runtime_sec = excluded.item_runtime_sec,
 		  item_year        = excluded.item_year,
 		  item_genres      = excluded.item_genres,
-		  item_tags        = excluded.item_tags`
+		  item_tags        = excluded.item_tags,
+		  library          = excluded.library`
 	for _, e := range evs {
 		if _, err := tx.ExecContext(ctx, q,
 			formatSpineTime(e.At), e.UserID, e.ItemID, e.ItemType, e.Method, e.PlayDurationSec,
 			e.ItemName, e.SeriesID, e.SeriesName,
-			e.ItemRuntimeSec, e.ItemYear, joinGenres(e.ItemGenres), joinTags(e.ItemTags), spineDedupHash(e),
+			e.ItemRuntimeSec, e.ItemYear, joinGenres(e.ItemGenres), joinTags(e.ItemTags), e.Library, spineDedupHash(e),
 		); err != nil {
 			return err
 		}
@@ -100,7 +101,7 @@ func (s *Store) AppendPlaybackEvents(ctx context.Context, evs []source.PlaybackE
 func (s *Store) ReadPlaybackEvents(ctx context.Context) ([]source.PlaybackEvent, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT at, user_id, item_id, item_type, method, play_duration_sec,
-		       item_name, series_id, series_name, item_runtime_sec, item_year, item_genres, item_tags
+		       item_name, series_id, series_name, item_runtime_sec, item_year, item_genres, item_tags, library
 		FROM playback_events ORDER BY at`)
 	if err != nil {
 		return nil, err
@@ -113,7 +114,7 @@ func (s *Store) ReadPlaybackEvents(ctx context.Context) ([]source.PlaybackEvent,
 		var atRaw, genres, tags string
 		if err := rows.Scan(&atRaw, &e.UserID, &e.ItemID, &e.ItemType, &e.Method,
 			&e.PlayDurationSec, &e.ItemName, &e.SeriesID, &e.SeriesName,
-			&e.ItemRuntimeSec, &e.ItemYear, &genres, &tags); err != nil {
+			&e.ItemRuntimeSec, &e.ItemYear, &genres, &tags, &e.Library); err != nil {
 			return nil, err
 		}
 		e.At = parseSpineTime(atRaw)

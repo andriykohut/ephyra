@@ -22,7 +22,7 @@ func ev(at time.Time, user, item, typ string, dur int64) source.PlaybackEvent {
 	return source.PlaybackEvent{
 		At: at, UserID: user, ItemID: item, ItemType: typ,
 		Method: "DirectPlay", PlayDurationSec: dur,
-		ItemName: item + "-name",
+		ItemName:       item + "-name",
 		ItemRuntimeSec: 6000, ItemYear: 2001, ItemGenres: []string{"Comedy", "Drama"},
 	}
 }
@@ -99,7 +99,7 @@ func TestSpine_ItemTagsRoundTripAndRefresh(t *testing.T) {
 	st := openStore(t)
 
 	e := source.PlaybackEvent{
-		At: time.Date(2025, 1, 6, 20, 10, 0, 0, time.UTC),
+		At:     time.Date(2025, 1, 6, 20, 10, 0, 0, time.UTC),
 		UserID: "u1", ItemID: "i1", ItemType: "movie", Method: "DirectPlay",
 		PlayDurationSec: 3600, ItemTags: []string{"heist", "vault"},
 	}
@@ -121,6 +121,37 @@ func TestSpine_ItemTagsRoundTripAndRefresh(t *testing.T) {
 	got, _ = st.ReadPlaybackEvents(ctx)
 	if len(got) != 1 || len(got[0].ItemTags) != 3 {
 		t.Fatalf("tags refresh-on-conflict: %+v", got)
+	}
+}
+
+func TestAppendPlaybackEvents_Library(t *testing.T) {
+	ctx := context.Background()
+	st := openStore(t)
+	e := ev(time.Date(2025, 1, 6, 20, 30, 0, 0, time.UTC), "u1", "m1", "movie", 3600)
+	e.Library = "Movies"
+	if err := st.AppendPlaybackEvents(ctx, []source.PlaybackEvent{e}); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := st.ReadPlaybackEvents(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Library != "Movies" {
+		t.Fatalf("got %+v", got)
+	}
+
+	// re-report with a different library (e.g. item moved) refreshes it
+	e.Library = "Shows"
+	if err := st.AppendPlaybackEvents(ctx, []source.PlaybackEvent{e}); err != nil {
+		t.Fatal(err)
+	}
+	got, err = st.ReadPlaybackEvents(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Library != "Shows" {
+		t.Fatalf("library not refreshed on conflict: %+v", got)
 	}
 }
 
