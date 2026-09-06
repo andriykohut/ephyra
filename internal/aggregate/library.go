@@ -53,6 +53,40 @@ type LibraryAggregates struct {
 	TagPairs         []TagPair
 }
 
+// FilterLibrary returns a snapshot containing only items in lib, with
+// SeriesCounts narrowed to lib's own count. lib == "" returns snap unchanged
+// (the "All libraries" scope). Used by the scheduler to compute a
+// per-library LibraryAggregates by calling the unmodified Library() function
+// once per library, rather than threading a filter through it.
+func FilterLibrary(snap source.LibrarySnapshot, lib string) source.LibrarySnapshot {
+	if lib == "" {
+		return snap
+	}
+	out := snap
+	out.Items = nil
+	for _, it := range snap.Items {
+		if it.Library == lib {
+			out.Items = append(out.Items, it)
+		}
+	}
+	out.SeriesCounts = map[string]int{lib: snap.SeriesCounts[lib]}
+	return out
+}
+
+// DistinctItemLibraries returns the unique Library values across items, in no
+// particular order.
+func DistinctItemLibraries(items []source.LibraryItem) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, it := range items {
+		if !seen[it.Library] {
+			seen[it.Library] = true
+			out = append(out, it.Library)
+		}
+	}
+	return out
+}
+
 type diskAcc struct {
 	bytes int64
 	items int64

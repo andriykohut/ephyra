@@ -129,3 +129,44 @@ func findLabel(s []LabeledCount, l string) LabeledCount {
 	}
 	return LabeledCount{}
 }
+
+func TestFilterLibrary(t *testing.T) {
+	snap := source.LibrarySnapshot{
+		Items: []source.LibraryItem{
+			{ID: "a", Library: "Movies", Type: "movie"},
+			{ID: "b", Library: "Movies", Type: "movie"},
+			{ID: "c", Library: "Shows", Type: "episode"},
+		},
+		SeriesCounts: map[string]int{"Shows": 2, "Movies": 0},
+	}
+
+	all := FilterLibrary(snap, "")
+	if len(all.Items) != 3 {
+		t.Fatalf("empty filter should return everything, got %d items", len(all.Items))
+	}
+
+	movies := FilterLibrary(snap, "Movies")
+	if len(movies.Items) != 2 || movies.SeriesCounts["Movies"] != 0 {
+		t.Fatalf("movies: items=%d series=%d", len(movies.Items), movies.SeriesCounts["Movies"])
+	}
+	shows := FilterLibrary(snap, "Shows")
+	if len(shows.Items) != 1 || shows.SeriesCounts["Shows"] != 2 {
+		t.Fatalf("shows: items=%d series=%d", len(shows.Items), shows.SeriesCounts["Shows"])
+	}
+}
+
+func TestDistinctItemLibraries(t *testing.T) {
+	items := []source.LibraryItem{
+		{Library: "Movies"}, {Library: "Shows"}, {Library: "Movies"}, {Library: "Unknown"},
+	}
+	got := DistinctItemLibraries(items)
+	want := map[string]bool{"Movies": true, "Shows": true, "Unknown": true}
+	if len(got) != 3 {
+		t.Fatalf("got %v", got)
+	}
+	for _, g := range got {
+		if !want[g] {
+			t.Errorf("unexpected library %q", g)
+		}
+	}
+}
