@@ -209,6 +209,54 @@ func TestRunLibraryOnce_PopulatesCleanupUsersCore(t *testing.T) {
 	}
 }
 
+func TestRunLibraryOnce_PerLibraryAggregates(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir()+"/s.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	var items []source.LibraryItem
+	for i := 0; i < 4; i++ {
+		items = append(items, source.LibraryItem{
+			ID: "m" + string(rune('1'+i)), Name: "Movie", Type: "movie", SizeBytes: 1, Library: "Movies",
+		})
+	}
+	for i := 0; i < 2; i++ {
+		items = append(items, source.LibraryItem{
+			ID: "s" + string(rune('1'+i)), Name: "Show", Type: "movie", SizeBytes: 1, Library: "Shows",
+		})
+	}
+	fs := &fakeSource{snap: source.LibrarySnapshot{Items: items}}
+	ts := time.Unix(1000, 0)
+	fs.mtime.Store(&ts)
+	sc := New(st, fs, config.Config{RefreshLibrary: time.Hour, RefreshWatch: time.Hour}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	if err := sc.RunLibraryOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	all, err := st.ReadLibraryOverview(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	movies, err := st.ReadLibraryOverview(ctx, "Movies")
+	if err != nil {
+		t.Fatal(err)
+	}
+	shows, err := st.ReadLibraryOverview(ctx, "Shows")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if movies.Totals.Items+shows.Totals.Items != all.Totals.Items {
+		t.Fatalf("movies(%d)+shows(%d) != all(%d)", movies.Totals.Items, shows.Totals.Items, all.Totals.Items)
+	}
+	if movies.Totals.Items != 4 || shows.Totals.Items != 2 {
+		t.Fatalf("movies=%d shows=%d, want 4/2", movies.Totals.Items, shows.Totals.Items)
+	}
+}
+
 func TestRunWatchOnce_PopulatesWatchTables(t *testing.T) {
 	ctx := context.Background()
 	st, err := store.Open(ctx, t.TempDir()+"/s.db")

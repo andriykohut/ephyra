@@ -104,15 +104,18 @@ func (s *Scheduler) RunLibraryOnce(ctx context.Context) error {
 	if err != nil {
 		return s.recordFailure(ctx, "library", mt, start, err)
 	}
-	agg := aggregate.Library(snap, time.Local)
+	scoped := map[string]aggregate.LibraryAggregates{"": aggregate.Library(snap, time.Local)}
+	for _, lib := range aggregate.DistinctItemLibraries(snap.Items) {
+		scoped[lib] = aggregate.Library(aggregate.FilterLibrary(snap, lib), time.Local)
+	}
 	cleanup := aggregate.Cleanup(snap)
 	users := aggregate.Users(snap)
 	core := aggregate.CorePlays(snap.UserPlays)
-	if err := s.st.WriteLibraryAggregates(ctx, map[string]aggregate.LibraryAggregates{"": agg}, cleanup, users, core); err != nil {
+	if err := s.st.WriteLibraryAggregates(ctx, scoped, cleanup, users, core); err != nil {
 		return s.recordFailure(ctx, "library", mt, start, err)
 	}
 	s.log.Info("library refresh ok",
-		"items", int64(agg.Totals["items.total"]), "dur_ms", time.Since(start).Milliseconds())
+		"items", int64(scoped[""].Totals["items.total"]), "dur_ms", time.Since(start).Milliseconds())
 	return s.st.SetRefreshMeta(ctx, store.RefreshMeta{
 		Job: "library", LastRunAt: time.Now().UTC(), SourceMTime: mt,
 		DurationMS: time.Since(start).Milliseconds(), OK: true, Skipped: false,
