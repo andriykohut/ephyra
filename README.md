@@ -10,9 +10,10 @@ Runs beside Jellyfin in Docker Compose and puts next to no load on the server.
 
 Named after the juvenile stage of a jellyfin— sorry, jellyfish.
 
-> **Pre-alpha.** Very much so. All five pages work now, but only one real
-> Jellyfin (10.11.11) has been tested against and anything here can change
-> without notice. Run it if you're curious, not if you're relying on it.
+> **Alpha.** All five pages work, and it has survived a major Jellyfin upgrade
+> (10.11 → 12.0) without code changes. Still only tested on one real server, so
+> expect rough edges and changes without notice. Run it if you're curious, not
+> if you're relying on it.
 
 **This build ships five pages: Library, Watch Stats, Cleanup, Profiles, and Now
 Playing.** Watch Stats and Profiles need the Playback Reporting plugin and show
@@ -22,7 +23,7 @@ Jellyfin alone, though the key is required for Ephyra to start at all.
 
 ## What you need
 
-- Jellyfin 10.11, running on the same Docker host.
+- Jellyfin 10.11 or 12.0, running on the same Docker host.
 - The ability to bind-mount Jellyfin's config directory into another container,
   read-only.
 - A Jellyfin API key: **Dashboard → API Keys → +**, name it `ephyra`. Put it in
@@ -169,14 +170,16 @@ Ephyra never writes to Jellyfin or to the mounted directory.
 
 ## Test against a real library
 
-`internal/source/file/queries.go` targets Jellyfin 10.11's `jellyfin.db`
-(`docs/schema-notes.md`), checked against one real 10.11.11. Builds vary. Do this
-after upgrading Jellyfin, or if the numbers look wrong.
+`internal/source/file/queries.go` targets the `jellyfin.db` of Jellyfin 10.11 and
+12.0 (`docs/schema-notes.md`), checked against one real server on 10.11.11 and
+12.0.0. Builds vary. Do this after upgrading Jellyfin, or if the numbers look
+wrong.
 
 ### Get a copy of the item DB
 
-10.11 keeps it in **`jellyfin.db`** at `<jellyfin-config>/data/jellyfin.db` — or
-`<jellyfin-config>/data/data/jellyfin.db` on the linuxserver image. Older
+10.11 and 12.0 keep it in **`jellyfin.db`** at
+`<jellyfin-config>/data/jellyfin.db` — or `<jellyfin-config>/data/data/jellyfin.db`
+on the linuxserver image. Older
 installs have `library.db` in the same place. Bring the `-wal` and `-shm`
 sidecars with it (WAL mode).
 

@@ -1,7 +1,9 @@
 # Jellyfin schema notes
 
 What Ephyra's queries assume about Jellyfin's item store. Verified against a real
-**Jellyfin 10.11.11** (linuxserver image) on 2026-08-30.
+**Jellyfin 10.11.11** (linuxserver image) on 2026-08-30, and against the same
+server on **12.0.0** on 2026-09-10: same tables, columns, enums and value
+formats, no query changes.
 
 ## Where the DB is
 
@@ -31,6 +33,10 @@ freeform, usually TMDb keywords, often sparse), `TopParentId` TEXT,
 - `Type` values unchanged: Movie = `MediaBrowser.Controller.Entities.Movies.Movie`,
   Episode = `...TV.Episode`, Series = `...TV.Series`,
   Folder = `...Entities.Folder`, CollectionFolder = `...Entities.CollectionFolder`.
+- Alternate versions are separate rows whose `PrimaryVersionId` points at the
+  primary. Ephyra counts each one as its own item: right for disk usage,
+  generous for episode counts when Jellyfin misgroups a folder of episodes as
+  versions of one.
 
 ## MediaStreamInfos  (was MediaStreams)
 
@@ -68,7 +74,7 @@ CREATE TABLE PlaybackActivity (
 );
 ```
 
-No `RemoteAddress`. No primary key.
+No `RemoteAddress`. No primary key. Same shape on 12.0 with plugin v19.
 
 ### ID normalization
 
@@ -121,13 +127,17 @@ CREATE TABLE UserData (ItemId TEXT, UserId TEXT, CustomDataKey TEXT,  -- PK all 
 Now Playing doesn't touch SQLite. `internal/jellyfin` talks to Jellyfin's HTTP
 API directly — `GET /Sessions?ActiveWithinSeconds=960` on the poll,
 `GET /System/Info` for the header, `GET /Items/{id}/Images/{kind}` for art.
-Shapes below checked against **10.11.11** on 2026-08-31. `internal/jellyfin`
-unmarshals only the fields listed here; `encoding/json` drops the rest.
+Shapes below checked against **10.11.11** on 2026-08-31 and against a live
+**12.0.0** transcode on 2026-09-10: same names and types. 12.0 omits empty
+fields instead of sending `""` (a movie has no `SeriesName` or `IndexNumber`
+at all), which decodes the same. `internal/jellyfin` unmarshals only the fields
+listed here; `encoding/json` drops the rest.
 
 ### Auth
 
-`Authorization: MediaBrowser Token=<api-key>` on every request. `X-Emby-Token:
-<key>` also works on 10.11.11, but Ephyra uses the `Authorization` form.
+`Authorization: MediaBrowser Token=<api-key>` on every request. It's the only
+form 12.0 accepts: `X-Emby-Token`, `X-MediaBrowser-Token` and `?api_key=` all
+return 401 there. (`X-Emby-Token` still worked on 10.11.11.)
 
 ### `GET /Sessions`
 

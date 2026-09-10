@@ -1,6 +1,6 @@
 // Package source is where library facts and playback events come from, minus the
 // question of how. FileSource reads copies of Jellyfin's SQLite files; a future
-// APISource will go over HTTP for Jellyfin 12 / Postgres / remote setups.
+// APISource will go over HTTP for Postgres-backed or remote setups.
 package source
 
 import (

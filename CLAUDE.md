@@ -63,10 +63,10 @@ API handlers read ONLY from store's agg_* tables, never from Jellyfin.
 
 - `internal/source` — the `Source` interface (`LibraryFacts`, `PlaybackEvents`,
   `Kind`) plus the plain structs it returns. `internal/source/file` is the only
-  implementation. This is the pluggability seam: an `APISource` for Jellyfin 12 /
-  Postgres / remote is designed-in but not built — `SOURCE=api` returns an error
-  today. `MTimer` is the optional file-source extra the scheduler uses for the
-  skip check.
+  implementation. This is the pluggability seam: an `APISource` for
+  Postgres-backed / remote Jellyfin is designed-in but not built — `SOURCE=api`
+  returns an error today. `MTimer` is the optional file-source extra the
+  scheduler uses for the skip check.
 - `internal/aggregate` — pure functions. `buckets.go` classifies raw values
   (resolution/codec/HDR/decade); `library.go` walks a snapshot once into
   `LibraryAggregates`. Tested with in-code snapshots and golden values.
@@ -115,9 +115,10 @@ API handlers read ONLY from store's agg_* tables, never from Jellyfin.
 
 ## Jellyfin schema
 
-`internal/source/file/queries.go` targets Jellyfin **10.11**'s `jellyfin.db`
-(EF-Core: `BaseItems` / `MediaStreamInfos` / `Users` / `UserData`), verified
-against a real DB on 2026-08-30. `docs/schema-notes.md` records the layout and the
+`internal/source/file/queries.go` targets the `jellyfin.db` of Jellyfin **10.11
+and 12.0** (EF-Core: `BaseItems` / `MediaStreamInfos` / `Users` / `UserData`),
+verified against a real DB on 10.11.11 (2026-08-30) and 12.0.0 (2026-09-10).
+`docs/schema-notes.md` records the layout and the
 gotchas (integer `StreamType` enum, `TopParentId` points at the physical folder
 not the `CollectionFolder`, no `Container` column — derived from `Path`). Older
 `library.db` installs (10.10 and earlier) are not handled. Re-run README's "Test
