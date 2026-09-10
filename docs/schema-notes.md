@@ -74,7 +74,7 @@ CREATE TABLE PlaybackActivity (
 );
 ```
 
-No `RemoteAddress`. No primary key.
+No `RemoteAddress`. No primary key. Same shape on 12.0 with plugin v19.
 
 ### ID normalization
 
@@ -127,10 +127,11 @@ CREATE TABLE UserData (ItemId TEXT, UserId TEXT, CustomDataKey TEXT,  -- PK all 
 Now Playing doesn't touch SQLite. `internal/jellyfin` talks to Jellyfin's HTTP
 API directly — `GET /Sessions?ActiveWithinSeconds=960` on the poll,
 `GET /System/Info` for the header, `GET /Items/{id}/Images/{kind}` for art.
-Shapes below checked against **10.11.11** on 2026-08-31, and against 12.0.0's
-OpenAPI spec on 2026-09-10 (every field below is still there, same names and
-types). `internal/jellyfin` unmarshals only the fields listed here;
-`encoding/json` drops the rest.
+Shapes below checked against **10.11.11** on 2026-08-31 and against a live
+**12.0.0** transcode on 2026-09-10: same names and types. 12.0 omits empty
+fields instead of sending `""` (a movie has no `SeriesName` or `IndexNumber`
+at all), which decodes the same. `internal/jellyfin` unmarshals only the fields
+listed here; `encoding/json` drops the rest.
 
 ### Auth
 
@@ -207,9 +208,6 @@ front.
 
 ## Not yet verified
 
-- A live play on 12.0. The 12.0 check covered the schema, the OpenAPI spec and
-  an idle `/Sessions`; nothing was playing, so neither a real 12.0 session
-  payload nor a fresh Playback Reporting row has been seen yet.
 - Older Jellyfin (10.10 and earlier) with `library.db` — `queries.go` targets the
   10.11 schema only. If someone runs it against `library.db` the queries will
   fail on unknown tables; needs a schema-version branch or the `APISource`.
