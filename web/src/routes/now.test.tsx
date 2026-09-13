@@ -47,7 +47,7 @@ test("renders a session card with progress and quality chips", () => {
   expect(screen.getByText(/1080p/)).toBeInTheDocument();
   expect(screen.getByText(/local/i)).toBeInTheDocument();
   const poster = screen.getByRole("img", { name: /poster/i });
-  expect(poster).toHaveAttribute("src", expect.stringContaining("/api/now-playing/art/item1"));
+  expect(poster).toHaveAttribute("src", expect.stringContaining("/api/art/item/item1"));
 });
 
 test("transcode session shows the arrow rows and raw reasons", () => {

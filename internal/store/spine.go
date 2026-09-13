@@ -159,6 +159,88 @@ func (s *Store) UpdatePlaybackLibraries(ctx context.Context, resolved map[string
 	return tx.Commit()
 }
 
+type PlayRow struct {
+	At              string `json:"at"`
+	ItemID          string `json:"item_id"`
+	ItemType        string `json:"item_type"`
+	Name            string `json:"name"`
+	SeriesName      string `json:"series_name"`
+	PlayDurationSec int64  `json:"play_duration_sec"`
+	Played          bool   `json:"played"`
+	JFURL           string `json:"jf_url"`
+}
+
+// PlayCursor's At alone is not unique -- two plays can share a timestamp --
+// so RowID breaks the tie.
+type PlayCursor struct {
+	At    string `json:"at"`
+	RowID int64  `json:"row_id"`
+}
+
+// ReadPlays is the one handler path that reads playback_events directly
+// instead of an agg_* table: the play history is a raw list, not a rollup,
+// so there is nothing to pre-aggregate. Pages newest-first via a keyset
+// cursor on (at, rowid) rather than OFFSET, since the spine only grows.
+// jf_url needs no dim_jf_ref lookup -- item_id already is the API's item id.
+func (s *Store) ReadPlays(ctx context.Context, userID, library string,
+	before *PlayCursor, limit int,
+) ([]PlayRow, *PlayCursor, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	base, serverID := s.jellyfinLinks()
+	q := `
+		SELECT pe.rowid, pe.at, pe.item_id, pe.item_type, pe.item_name,
+		       pe.series_name, pe.play_duration_sec,
+		       COALESCE(dp.played, 0)
+		FROM playback_events pe
+		LEFT JOIN dim_played dp ON dp.user_id = pe.user_id AND dp.item_id = pe.item_id
+		WHERE pe.user_id = ?`
+	args := []any{userID}
+	if library != "" {
+		q += ` AND pe.library = ?`
+		args = append(args, library)
+	}
+	if before != nil {
+		// Tuple comparison, not `at < ?`: two plays can share a timestamp, and
+		// the rowid is what breaks the tie in both the filter and the order.
+		q += ` AND (pe.at < ? OR (pe.at = ? AND pe.rowid < ?))`
+		args = append(args, before.At, before.At, before.RowID)
+	}
+	q += ` ORDER BY pe.at DESC, pe.rowid DESC LIMIT ?`
+	args = append(args, limit+1)
+
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+
+	var out []PlayRow
+	var rowIDs []int64
+	for rows.Next() {
+		var r PlayRow
+		var rowID int64
+		if err := rows.Scan(&rowID, &r.At, &r.ItemID, &r.ItemType, &r.Name,
+			&r.SeriesName, &r.PlayDurationSec, &r.Played); err != nil {
+			return nil, nil, err
+		}
+		r.JFURL = jfLink(base, serverID, "item", r.ItemID)
+		out = append(out, r)
+		rowIDs = append(rowIDs, rowID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, err
+	}
+
+	var next *PlayCursor
+	if len(out) > limit {
+		out = out[:limit]
+		next = &PlayCursor{At: out[limit-1].At, RowID: rowIDs[limit-1]}
+	}
+	return orEmpty(out), next, nil
+}
+
 // SpineCoverage is the min/max play date and total row count, for the API
 // coverage block. Dates are YYYY-MM-DD; empty strings when the spine is empty.
 func (s *Store) SpineCoverage(ctx context.Context) (first, last string, total int64, err error) {

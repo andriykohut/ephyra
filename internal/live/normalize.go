@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/andriykohut/ephyra/internal/jellyfin"
+	"github.com/andriykohut/ephyra/internal/source"
 )
 
 func normalize(raw []jellyfin.RawSession, server ServerInfo, capacity *int) Snapshot {
@@ -23,6 +24,7 @@ func normalize(raw []jellyfin.RawSession, server ServerInfo, capacity *int) Snap
 
 		s := Session{
 			SessionID:     rs.ID,
+			UserID:        source.CanonID(rs.UserID),
 			User:          rs.UserName,
 			Type:          it.Type,
 			Title:         it.Name,

@@ -20,6 +20,24 @@ export function fmtInt(n: number): string {
   return n.toLocaleString("en-US");
 }
 
+// Whole hours, no day/minute breakdown -- for the profile header's compact
+// stat, where fmtRuntime's "4d 4h" would blow the layout.
+export function fmtHours(sec: number): string {
+  return `${Math.round(sec / 3600)}h`;
+}
+
+// Ranked-row values run from a few seconds to a few hours, unlike fmtRuntime's
+// day-scale totals -- "0h 1m" would hide a 100-second play entirely, so this
+// drops to minutes:seconds under an hour.
+export function fmtDuration(sec: number): string {
+  const s = Math.max(0, Math.round(sec));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (h >= 1) return `${h}h ${m}m`;
+  if (m >= 1) return `${m}m ${s % 60}s`;
+  return `${s}s`;
+}
+
 // Jellyfin hands us bits per second on the wire — stream BitRate fields and the
 // transcoder's target. Not bytes.
 export function fmtBitrate(bps: number): string {

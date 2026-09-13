@@ -12,12 +12,14 @@ import (
 )
 
 // sessionsClient is the slice of *jellyfin.Client the hub needs: the /Sessions
-// poll, /System/Info for the header, and the item-image passthrough for the art
+// poll, /System/Info for the header, and the image passthroughs for the art
 // proxy. *jellyfin.Client satisfies it.
 type sessionsClient interface {
 	Sessions(ctx context.Context) ([]jellyfin.RawSession, error)
 	SystemInfo(ctx context.Context) (jellyfin.ServerInfo, error)
 	Image(ctx context.Context, itemID string, kind jellyfin.ImageKind, tag string) (io.ReadCloser, string, error)
+	PersonImage(ctx context.Context, name string) (io.ReadCloser, string, error)
+	UserImage(ctx context.Context, userID string) (io.ReadCloser, string, error)
 }
 
 // the real client is the one production implementation.
@@ -129,9 +131,16 @@ func (h *Hub) Publish(ev Event) {
 	}
 }
 
-// Image is a passthrough to the underlying client for the art proxy.
 func (h *Hub) Image(ctx context.Context, itemID string, kind jellyfin.ImageKind, tag string) (io.ReadCloser, string, error) {
 	return h.client.Image(ctx, itemID, kind, tag)
+}
+
+func (h *Hub) PersonImage(ctx context.Context, name string) (io.ReadCloser, string, error) {
+	return h.client.PersonImage(ctx, name)
+}
+
+func (h *Hub) UserImage(ctx context.Context, userID string) (io.ReadCloser, string, error) {
+	return h.client.UserImage(ctx, userID)
 }
 
 // Snapshot returns the cached snapshot if it is younger than one interval,

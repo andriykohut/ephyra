@@ -57,6 +57,23 @@ type UserPlay struct {
 	LastPlayedAt                         time.Time
 }
 
+// Credit is one person attached to one item. Jellyfin keeps a separate Peoples
+// row per (name, type), so the type here is the credit's own, not a global label
+// on the person -- the same human is separate rows when they act and direct.
+type Credit struct {
+	ItemID    string // canonical
+	Person    string
+	Kind      string // "actor" | "director"
+	ListOrder int
+}
+
+// UserItemPlayed is Jellyfin's watched tick for one (user, item). Distinct from
+// LibraryItem.Played, which is MAX across users.
+type UserItemPlayed struct {
+	UserID, ItemID string // canonical
+	Played         bool
+}
+
 // LibrarySnapshot is everything a library refresh pulled from Jellyfin.
 type LibrarySnapshot struct {
 	GeneratedAt  time.Time
@@ -64,6 +81,8 @@ type LibrarySnapshot struct {
 	SeriesCounts map[string]int // library name -> series count
 	Users        []UserRef
 	UserPlays    []UserPlay
+	Credits      []Credit
+	Played       []UserItemPlayed
 }
 
 // PlaybackEvent is one row from the Playback Reporting plugin, enriched (where

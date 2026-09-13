@@ -42,7 +42,7 @@ func New(d Deps) *Server {
 	if now == nil {
 		now = time.Now
 	}
-	return &Server{st: d.Store, cfg: d.Cfg, log: d.Log, trigger: d.Trigger, static: d.Static, now: now, live: d.Live, art: newArtCache(32)}
+	return &Server{st: d.Store, cfg: d.Cfg, log: d.Log, trigger: d.Trigger, static: d.Static, now: now, live: d.Live, art: newArtCache(128 << 20)}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -53,11 +53,15 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/watch/stats", s.handleWatchStats)
 	mux.HandleFunc("GET /api/profile", s.handleProfileList)
 	mux.HandleFunc("GET /api/profile/{userID}", s.handleProfile)
+	mux.HandleFunc("GET /api/profile/{userID}/plays", s.handleProfilePlays)
+	mux.HandleFunc("GET /api/profile/{userID}/overview", s.handleProfileOverview)
 	mux.HandleFunc("GET /api/cleanup", s.handleCleanup)
 	mux.HandleFunc("POST /api/refresh", s.handleRefresh)
 	mux.HandleFunc("GET /api/now-playing", s.handleNowPlaying)
 	mux.HandleFunc("GET /api/now-playing/stream", s.handleNowPlayingStream)
-	mux.HandleFunc("GET /api/now-playing/art/{itemId}", s.handleNowPlayingArt)
+	mux.HandleFunc("GET /api/art/item/{itemId}", s.handleArtItem)
+	mux.HandleFunc("GET /api/art/person", s.handleArtPerson)
+	mux.HandleFunc("GET /api/art/user/{userId}", s.handleArtUser)
 	mux.HandleFunc("/", s.handleRoot)
 	return withLogging(s.log, mux)
 }

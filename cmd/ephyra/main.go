@@ -62,10 +62,21 @@ func run() error {
 		return err
 	}
 
+	jc := jellyfin.New(cfg)
+
+	// The server id has no config source; it's whatever a past resolver run
+	// cached in dim_jf_ref, read back here so links work right after a
+	// restart instead of only after the next watch job.
+	refs, err := st.ReadJFRefs(ctx)
+	if err != nil {
+		return err
+	}
+	st.SetJellyfinLinks(cfg.JellyfinURL, refs["server\x1f"])
+
 	sched := scheduler.New(st, src, cfg, log)
+	sched.SetRefClient(jc)
 	go sched.Run(ctx)
 
-	jc := jellyfin.New(cfg)
 	var capacity *int
 	if cfg.StreamCapacity > 0 {
 		capacity = &cfg.StreamCapacity

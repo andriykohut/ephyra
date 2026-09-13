@@ -54,6 +54,7 @@ type Transcode struct {
 
 type Session struct {
 	SessionID     string        `json:"session_id"`
+	UserID        string        `json:"user_id"`
 	User          string        `json:"user"`
 	Type          string        `json:"type"`
 	Title         string        `json:"title"`

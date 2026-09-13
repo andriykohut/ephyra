@@ -39,6 +39,9 @@ func TestNormalize_DirectPlayEpisode(t *testing.T) {
 	if s.Title != "The Long Retreat" || s.Series != "Northwind" || s.SeasonEpisode != "S1E7" || s.Type != "Episode" {
 		t.Fatalf("labels: %+v", s)
 	}
+	if s.UserID != "11111111222222223333333344444444" {
+		t.Fatalf("user id = %q", s.UserID)
+	}
 	if s.PlayMethod != "DirectPlay" || s.Paused {
 		t.Fatalf("state: %+v", s)
 	}
@@ -94,6 +97,23 @@ func TestNormalize_Transcode(t *testing.T) {
 	}
 	if snap.Summary.Capacity == nil || *snap.Summary.Capacity != 6 {
 		t.Fatalf("capacity: %+v", snap.Summary.Capacity)
+	}
+}
+
+func TestNormalize_CanonicalizesUserID(t *testing.T) {
+	raw := []jellyfin.RawSession{{
+		ID: "sess1", UserID: "AAAA0000-BBBB-1111-CCCC-222233334444", UserName: "alice",
+		PlayState: &jellyfin.RawPlayState{PlayMethod: "DirectPlay"},
+		NowPlayingItem: &jellyfin.RawItem{
+			ID: "item1", Name: "T", Type: "Movie", MediaType: "Video", RunTimeTicks: 6000 * 10_000_000,
+		},
+	}}
+	snap := normalize(raw, ServerInfo{}, nil)
+	if len(snap.Sessions) != 1 {
+		t.Fatalf("sessions = %d", len(snap.Sessions))
+	}
+	if want := "aaaa0000bbbb1111cccc222233334444"; snap.Sessions[0].UserID != want {
+		t.Fatalf("user id = %q, want %q", snap.Sessions[0].UserID, want)
 	}
 }
 

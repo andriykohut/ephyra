@@ -219,6 +219,19 @@ Compare against `docs/schema-notes.md`. Mismatches (renamed tables/columns,
 `TopParentId` semantics, HDR/Dolby-Vision fields) mean
 `internal/source/file/queries.go` needs a tweak — the notes say which.
 
+Also check credit coverage, which feeds the Profiles people charts:
+
+```sql
+SELECT b.Type, count(*) items,
+       sum(CASE WHEN EXISTS(SELECT 1 FROM PeopleBaseItemMap m WHERE m.ItemId = b.Id)
+                THEN 1 ELSE 0 END) with_credits
+FROM BaseItems b
+WHERE b.Type LIKE '%Movie' OR b.Type LIKE '%Episode'
+GROUP BY b.Type;
+```
+
+Low episode coverage is expected — it's what the series fallback handles.
+
 ### Run against it and eyeball the numbers
 
 ```sh

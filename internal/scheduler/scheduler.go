@@ -24,6 +24,8 @@ type Scheduler struct {
 	libMu   sync.Mutex
 	watchMu sync.Mutex
 	trigger chan string
+
+	refc RefClient // nil until SetRefClient; resolveRefs is then a no-op
 }
 
 func New(st *store.Store, src source.Source, cfg config.Config, log *slog.Logger) *Scheduler {
@@ -117,6 +119,12 @@ func (s *Scheduler) RunLibraryOnce(ctx context.Context) error {
 	if err := s.st.WriteLibraryAggregates(ctx, scoped, cleanup, users, core); err != nil {
 		return s.recordFailure(ctx, "library", mt, start, err)
 	}
+	if err := s.st.UpsertCredits(ctx, snap.Credits); err != nil {
+		return s.recordFailure(ctx, "library", mt, start, err)
+	}
+	if err := s.st.UpsertPlayed(ctx, snap.Played); err != nil {
+		return s.recordFailure(ctx, "library", mt, start, err)
+	}
 	s.log.Info("library refresh ok",
 		"items", int64(scoped[""].Totals["items.total"]), "dur_ms", time.Since(start).Milliseconds())
 	return s.st.SetRefreshMeta(ctx, store.RefreshMeta{
@@ -207,8 +215,31 @@ func (s *Scheduler) RunWatchOnce(ctx context.Context) error {
 	if err := s.st.WriteProfileAggregates(ctx, scopedProfiles); err != nil {
 		return s.recordFailure(ctx, "watch", mt, start, err)
 	}
+
+	credits, err := s.st.ReadCredits(ctx)
+	if err != nil {
+		return s.recordFailure(ctx, "watch", mt, start, err)
+	}
+	played, err := s.st.ReadPlayed(ctx)
+	if err != nil {
+		return s.recordFailure(ctx, "watch", mt, start, err)
+	}
+	scopedPeople := map[string]aggregate.PeopleAggregates{
+		"": aggregate.People(history, credits, played, now),
+	}
+	for _, lib := range aggregate.DistinctEventLibraries(history) {
+		if lib == "" {
+			continue
+		}
+		scopedPeople[lib] = aggregate.People(
+			aggregate.FilterEventsByLibrary(history, lib), credits, played, now)
+	}
+	if err := s.st.WritePeopleAggregates(ctx, scopedPeople); err != nil {
+		return s.recordFailure(ctx, "watch", mt, start, err)
+	}
 	s.log.Info("watch refresh ok", "events_seen", len(events), "history", len(history),
 		"daily_rows", len(agg.Daily), "dur_ms", time.Since(start).Milliseconds())
+	s.resolveRefs(ctx)
 	return s.st.SetRefreshMeta(ctx, store.RefreshMeta{
 		Job: "watch", LastRunAt: time.Now().UTC(), SourceMTime: mt,
 		DurationMS: time.Since(start).Milliseconds(), OK: true, PluginAvailable: true,

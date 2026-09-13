@@ -142,6 +142,56 @@ func TestMigration0005ClearsRefreshMetaMtimeOnUpgrade(t *testing.T) {
 	}
 }
 
+// TestMigration0007ClearsRefreshMetaMtimeOnUpgrade is 0005's regression test
+// aimed at 0007: that migration adds dim_credit/dim_played/agg_profile_people,
+// which the same mtime-skip hazard would leave empty on an existing install.
+func TestMigration0007ClearsRefreshMetaMtimeOnUpgrade(t *testing.T) {
+	ctx := context.Background()
+	path := t.TempDir() + "/s.db"
+	db, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	// Pre-upgrade: migrations 1-6 only.
+	applyMigrationsUpTo(t, ctx, db, 6)
+
+	// Pre-existing refresh_meta rows, as if both jobs ran successfully before
+	// the upgrade and the underlying source files haven't changed since.
+	mt := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC).Format(tsLayout)
+	for _, job := range []string{"library", "watch"} {
+		if _, err := db.ExecContext(ctx, `
+			INSERT INTO refresh_meta (job, last_run_at, source_mtime, duration_ms, ok, skipped, plugin_available, error)
+			VALUES (?, ?, ?, 1, 1, 0, 1, '')`,
+			job, mt, mt,
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A non-empty spine, as a real install would have.
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO playback_events (user_id, item_id, item_type, method, at, play_duration_sec, library)
+		VALUES ('u1', 'i1', 'movie', 'DirectPlay', ?, 100, 'Movies')`, mt,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	// The upgrade: apply migration 0007.
+	applyMigrationsUpTo(t, ctx, db, 7)
+
+	s := &Store{db: db}
+	for _, job := range []string{"library", "watch"} {
+		m, ok, err := s.GetRefreshMeta(ctx, job)
+		if err != nil || !ok {
+			t.Fatalf("job %s: ok=%v err=%v", job, ok, err)
+		}
+		if !m.SourceMTime.IsZero() {
+			t.Errorf("job %s: SourceMTime = %v, want zero after migration 0007", job, m.SourceMTime)
+		}
+	}
+}
+
 func TestOpenAppliesMigrationsIdempotently(t *testing.T) {
 	ctx := context.Background()
 	path := t.TempDir() + "/s.db"
@@ -154,8 +204,8 @@ func TestOpenAppliesMigrationsIdempotently(t *testing.T) {
 	if err := s1.DB().QueryRowContext(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
-	if n != 6 {
-		t.Fatalf("want 6 applied migrations, got %d", n)
+	if n != 7 {
+		t.Fatalf("want 7 applied migrations, got %d", n)
 	}
 	if err := s1.Close(); err != nil {
 		t.Fatal(err)
@@ -243,8 +293,8 @@ func TestMigration0002Redefinitions(t *testing.T) {
 	if err := s.DB().QueryRowContext(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
-	if n != 6 {
-		t.Fatalf("want 6 migrations applied, got %d", n)
+	if n != 7 {
+		t.Fatalf("want 7 migrations applied, got %d", n)
 	}
 }
 
@@ -274,8 +324,8 @@ func TestMigrate_0003_ProfileTables(t *testing.T) {
 	if err := st.DB().QueryRow(`SELECT MAX(version) FROM schema_migrations`).Scan(&v); err != nil {
 		t.Fatal(err)
 	}
-	if v != 6 {
-		t.Fatalf("schema_migrations max version = %d, want 6", v)
+	if v != 7 {
+		t.Fatalf("schema_migrations max version = %d, want 7", v)
 	}
 
 	var idx int
@@ -322,5 +372,26 @@ func TestMigrations_ApplyCleanly(t *testing.T) {
 	}
 	if col != 1 {
 		t.Error("playback_events.library column missing")
+	}
+}
+
+func TestMigration0007Tables(t *testing.T) {
+	st := openStore(t)
+	for _, name := range []string{
+		"dim_credit", "dim_played", "dim_jf_ref",
+		"agg_profile_people", "agg_profile_top_items",
+	} {
+		var got string
+		err := st.DB().QueryRow(
+			`SELECT name FROM sqlite_master WHERE type='table' AND name=?`, name).Scan(&got)
+		if err != nil {
+			t.Fatalf("table %s missing: %v", name, err)
+		}
+	}
+	var idx string
+	if err := st.DB().QueryRow(
+		`SELECT name FROM sqlite_master WHERE type='index' AND name='ix_playback_events_user_at'`,
+	).Scan(&idx); err != nil {
+		t.Fatalf("index missing: %v", err)
 	}
 }

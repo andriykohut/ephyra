@@ -80,6 +80,113 @@ func TestClient_Error500(t *testing.T) {
 	}
 }
 
+func TestFindPersonRequiresAnExactNameMatch(t *testing.T) {
+	// searchTerm is a substring match on the server: "Cranston" comes back with
+	// both of these. Taking the first hit would link to the wrong person.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"Items":[
+			{"Name":"Cranston Johnson","Id":"wrongid"},
+			{"Name":"Bryan Cranston","Id":"rightid"}
+		]}`)
+	}))
+	defer srv.Close()
+	c := New(config.Config{JellyfinURL: srv.URL, JellyfinAPIKey: "key"})
+
+	got, err := c.FindPerson(context.Background(), "Bryan Cranston")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "rightid" {
+		t.Fatalf("id = %q, want rightid", got)
+	}
+}
+
+func TestFindPersonReturnsEmptyWhenNoExactMatch(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"Items":[{"Name":"Cranston Johnson","Id":"wrongid"}]}`)
+	}))
+	defer srv.Close()
+	c := New(config.Config{JellyfinURL: srv.URL, JellyfinAPIKey: "key"})
+
+	got, err := c.FindPerson(context.Background(), "Bryan Cranston")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "" {
+		t.Fatalf("id = %q, want empty", got)
+	}
+}
+
+func TestPersonImageEscapesTheName(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Header().Set("Content-Type", "image/jpeg")
+	}))
+	defer srv.Close()
+	c := New(config.Config{JellyfinURL: srv.URL, JellyfinAPIKey: "key"})
+
+	rc, _, err := c.PersonImage(context.Background(), "A$AP Rocky")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = rc.Close()
+	if gotPath != "/Persons/A$AP Rocky/Images/Primary" {
+		t.Fatalf("path = %q", gotPath)
+	}
+}
+
+func TestUserImageEscapesTheID(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Header().Set("Content-Type", "image/jpeg")
+	}))
+	defer srv.Close()
+	c := New(config.Config{JellyfinURL: srv.URL, JellyfinAPIKey: "key"})
+
+	rc, _, err := c.UserImage(context.Background(), "abc 123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = rc.Close()
+	if gotPath != "/Users/abc 123/Images/Primary" {
+		t.Fatalf("path = %q", gotPath)
+	}
+}
+
+func TestGenresMapsNameToID(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"Items":[{"Name":"Drama","Id":"d1"},{"Name":"Comedy","Id":"c1"}]}`)
+	}))
+	defer srv.Close()
+	c := New(config.Config{JellyfinURL: srv.URL, JellyfinAPIKey: "key"})
+
+	got, err := c.Genres(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["Drama"] != "d1" || got["Comedy"] != "c1" || len(got) != 2 {
+		t.Fatalf("genres = %+v", got)
+	}
+}
+
+func TestServerIDReadsSystemInfoID(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"Id":"srv-1"}`)
+	}))
+	defer srv.Close()
+	c := New(config.Config{JellyfinURL: srv.URL, JellyfinAPIKey: "key"})
+
+	got, err := c.ServerID(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "srv-1" {
+		t.Fatalf("server id = %q, want srv-1", got)
+	}
+}
+
 func TestClient_ImageAndTimeout(t *testing.T) {
 	png := []byte("\x89PNG\r\n\x1a\nfake")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

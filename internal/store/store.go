@@ -19,7 +19,10 @@ import (
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
-type Store struct{ db *sql.DB }
+type Store struct {
+	db    *sql.DB
+	links jfLinks
+}
 
 // Open opens (creating if needed) the SQLite file at path and applies any
 // pending migrations. Calling it again on the same file is a no-op.

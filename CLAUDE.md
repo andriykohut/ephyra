@@ -58,7 +58,9 @@ scheduler tick / POST /api/refresh
        Otherwise copy it + -wal/-shm into WORK_DIR, query the copy, delete it.
   └─ aggregate.Library(snapshot, loc)   ← pure, no I/O, no SQL
   └─ store.WriteLibraryAggregates(...)  ← one txn: DELETE + re-INSERT the agg_* rows
-API handlers read ONLY from store's agg_* tables, never from Jellyfin.
+Most API handlers read only from store's agg_* tables, never from Jellyfin.
+Two exceptions: the `/api/art/*` routes proxy Jellyfin's image endpoints live,
+and `/plays` reads the `playback_events` spine directly (see below).
 ```
 
 - `internal/source` — the `Source` interface (`LibraryFacts`, `PlaybackEvents`,
@@ -80,7 +82,14 @@ API handlers read ONLY from store's agg_* tables, never from Jellyfin.
   `aggregate.Profiles`. A play is keyed by `(at, user_id, item_id)`, the
   plugin's own session key: the plugin rewrites an open session's
   `PlayDuration` in place, so the upsert refreshes the duration on the existing
-  row instead of minting a new one per refresh.
+  row instead of minting a new one per refresh. `dim_credit` and `dim_played`
+  join `playback_events` the same way: upsert-only, never rewritten, so a play
+  in the spine keeps its cast and watched tick after Jellyfin drops the item --
+  `UserData` cascading on item delete means `dim_played` is the only surviving
+  copy of the tick. `dim_jf_ref` is upsert-only for a different reason: it's a
+  name → Jellyfin-id cache backing the "link out" feature on
+  `agg_profile_people` / `agg_profile_taste` rows, not a spine join, and
+  pruning it would just mean re-resolving names Jellyfin already answered.
 - `internal/scheduler` — one ticker per job + a manual-trigger channel, per-job
   mutex, mtime-skip. Runs each job once on startup.
 - `internal/api` — `net/http` `ServeMux` (method patterns). Every JSON response is
@@ -90,7 +99,12 @@ API handlers read ONLY from store's agg_* tables, never from Jellyfin.
   `/api/*` paths return 404 JSON; every other GET falls through to the SPA
   (`index.html`). List fields serialize as `[]`, never `null` — the SPA iterates
   them straight off the response, so the `store` reads run every slice through
-  `orEmpty` before returning.
+  `orEmpty` before returning. `GET /api/profile/{userID}/plays` reads
+  `playback_events` directly instead of a pre-rolled `agg_*` table — a
+  paginated history can't be pre-rolled without either capping it or rewriting
+  a slab every refresh, so it's an indexed keyset read instead. `GET
+  /api/profile` (the list) touches the spine too, via `SpineCoverage`, for the
+  lifetime first/last-play coverage line.
 - `internal/jellyfin` / `internal/live` — the Now Playing live path, off to the
   side of the pipeline above. `internal/jellyfin` is a thin read-only HTTP client
   (not a `Source`). `internal/live` holds the SSE hub whose poll loop runs

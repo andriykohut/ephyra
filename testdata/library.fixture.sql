@@ -113,5 +113,50 @@ INSERT INTO UserData (ItemId, UserId, CustomDataKey, LastPlayedDate, PlayCount, 
  -- S1E1: bob, partial (Played=0 but LastPlayedDate set) -> series "Some Show" is NOT "never"
  ('00000000-0000-0000-0000-0000000000E1', '66666666-7777-8888-9999-aaaaaaaaaaaa', 'k1', '2025-04-10 22:00:00.000', 1, 0),
  -- a UserData row for a user absent from Users (must not crash the join)
- ('00000000-0000-0000-0000-00000000000B', '00000000-0000-0000-0000-0000000000BB', 'k1', '2025-02-02 02:00:00.000', 1, 1);
--- Alpha, S1E2: no UserData at all -> "never watched"
+ ('00000000-0000-0000-0000-00000000000B', '00000000-0000-0000-0000-0000000000BB', 'k1', '2025-02-02 02:00:00.000', 1, 1),
+ -- Alpha: alice finished it -- the one credited item with a played=1 tick, so
+ -- Ada Vex/Cy Marrow's watch_sec_played has a non-zero case to exercise
+ -- (alice also has PlaybackActivity rows against Alpha, see the plugin fixture).
+ ('00000000-0000-0000-0000-00000000000A', '11111111-2222-3333-4444-555555555555', 'k1', '2025-01-09 12:30:00.000', 2, 1);
+-- S1E2: no UserData at all -> "never watched"
+
+-- Credits (Plan 5 profile overview) plus the person/role join table.
+CREATE TABLE IF NOT EXISTS Peoples (
+  Id TEXT NOT NULL PRIMARY KEY,
+  Name TEXT NOT NULL,
+  PersonType TEXT NULL
+);
+CREATE TABLE IF NOT EXISTS PeopleBaseItemMap (
+  ItemId TEXT NOT NULL,
+  PeopleId TEXT NOT NULL,
+  Role TEXT NOT NULL,
+  ListOrder INTEGER NULL,
+  SortOrder INTEGER NULL,
+  PRIMARY KEY (ItemId, PeopleId, Role)
+);
+
+-- One row per (name, type), which is how Jellyfin actually stores people:
+-- Ada Vex both acts and directs, so she is two rows.
+INSERT INTO Peoples (Id, Name, PersonType) VALUES
+  ('P0000001-0000-0000-0000-000000000001', 'Ada Vex',   'Actor'),
+  ('P0000001-0000-0000-0000-000000000002', 'Ada Vex',   'Director'),
+  ('P0000001-0000-0000-0000-000000000003', 'Bo Quill',  'GuestStar'),
+  ('P0000001-0000-0000-0000-000000000004', 'Cy Marrow', 'Director'),
+  ('P0000001-0000-0000-0000-000000000005', 'Dot Reyes', 'Producer');
+
+-- Alpha (movie): Ada Vex both acts and co-directs (her two Peoples rows), Cy
+-- Marrow also directs, Dot Reyes produces (dropped at read time).
+INSERT INTO PeopleBaseItemMap (ItemId, PeopleId, Role, ListOrder) VALUES
+  ('00000000-0000-0000-0000-00000000000A', 'P0000001-0000-0000-0000-000000000001', 'Actor',    0),
+  ('00000000-0000-0000-0000-00000000000A', 'P0000001-0000-0000-0000-000000000002', 'Director', 1),
+  ('00000000-0000-0000-0000-00000000000A', 'P0000001-0000-0000-0000-000000000004', 'Director', 0),
+  ('00000000-0000-0000-0000-00000000000A', 'P0000001-0000-0000-0000-000000000005', 'Producer', 0);
+
+-- Some Show (series): Ada Vex acts, Bo Quill guest-stars.
+INSERT INTO PeopleBaseItemMap (ItemId, PeopleId, Role, ListOrder) VALUES
+  ('00000000-0000-0000-0000-0000000000F0', 'P0000001-0000-0000-0000-000000000001', 'Actor',     0),
+  ('00000000-0000-0000-0000-0000000000F0', 'P0000001-0000-0000-0000-000000000003', 'GuestStar', 1);
+
+-- S1E1: its own credit. S1E2 gets none at all -- it must inherit the series'.
+INSERT INTO PeopleBaseItemMap (ItemId, PeopleId, Role, ListOrder) VALUES
+  ('00000000-0000-0000-0000-0000000000E1', 'P0000001-0000-0000-0000-000000000001', 'Actor', 0);

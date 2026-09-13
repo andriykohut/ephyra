@@ -105,6 +105,28 @@ GROUP BY iid`
 
 const usersQuery = `SELECT lower(replace(Id,'-','')), COALESCE(Username,'') FROM Users`
 
+// creditsQuery reads people per item. GuestStar folds into actor here so
+// nothing downstream has to know the distinction existed. Producer, Writer and
+// Composer are dropped -- they are not what the charts rank.
+const creditsQuery = `
+SELECT lower(replace(m.ItemId,'-','')) AS iid,
+       p.Name,
+       CASE WHEN p.PersonType = 'Director' THEN 'director' ELSE 'actor' END AS kind,
+       COALESCE(m.ListOrder, 0)
+FROM PeopleBaseItemMap m
+JOIN Peoples p ON p.Id = m.PeopleId
+WHERE p.PersonType IN ('Actor','GuestStar','Director')
+  AND COALESCE(p.Name,'') <> ''`
+
+// userPlayedQuery is playedStateQuery's per-user sibling: one row per
+// (user, item), MAX over CustomDataKey so duplicate rows can't disagree.
+const userPlayedQuery = `
+SELECT lower(replace(UserId,'-','')) AS uid,
+       lower(replace(ItemId,'-','')) AS iid,
+       MAX(Played)                   AS played
+FROM UserData
+GROUP BY uid, iid`
+
 // userPlaysQuery rolls UserData to one row per (user, movie|series): episodes
 // fold into their series, movies stay themselves.
 const userPlaysQuery = `
@@ -189,6 +211,12 @@ func defaultQueryLibrary(db *sql.DB) (source.LibrarySnapshot, error) {
 		return source.LibrarySnapshot{}, err
 	}
 	if err := readUserPlays(db, &snap); err != nil {
+		return source.LibrarySnapshot{}, err
+	}
+	if err := readCredits(db, &snap); err != nil {
+		return source.LibrarySnapshot{}, err
+	}
+	if err := readPlayed(db, &snap); err != nil {
 		return source.LibrarySnapshot{}, err
 	}
 
@@ -281,6 +309,53 @@ func readUserPlays(db *sql.DB, snap *source.LibrarySnapshot) error {
 		p.PlayCount = int(pc)
 		p.LastPlayedAt = parseJellyfinTime(lpd.String)
 		snap.UserPlays = append(snap.UserPlays, p)
+	}
+	return rows.Err()
+}
+
+func readCredits(db *sql.DB, snap *source.LibrarySnapshot) error {
+	rows, err := db.Query(creditsQuery)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	// A person can hold several roles on one item (two characters, or actor and
+	// guest star). dim_credit is keyed without the role, so keep the top billing.
+	best := map[source.Credit]int{}
+	for rows.Next() {
+		var c source.Credit
+		var order int
+		if err := rows.Scan(&c.ItemID, &c.Person, &c.Kind, &order); err != nil {
+			return err
+		}
+		if prev, ok := best[c]; !ok || order < prev {
+			best[c] = order
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for c, order := range best {
+		c.ListOrder = order
+		snap.Credits = append(snap.Credits, c)
+	}
+	return nil
+}
+
+func readPlayed(db *sql.DB, snap *source.LibrarySnapshot) error {
+	rows, err := db.Query(userPlayedQuery)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var p source.UserItemPlayed
+		var played int64
+		if err := rows.Scan(&p.UserID, &p.ItemID, &played); err != nil {
+			return err
+		}
+		p.Played = played == 1
+		snap.Played = append(snap.Played, p)
 	}
 	return rows.Err()
 }

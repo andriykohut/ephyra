@@ -2,6 +2,7 @@ package file
 
 import (
 	"database/sql"
+	"slices"
 	"testing"
 	"time"
 
@@ -101,8 +102,10 @@ func TestQueryLibrary_PlayedStateAndUsers(t *testing.T) {
 	if byName["S1E1"].SeriesName != "Some Show" {
 		t.Errorf("S1E1.SeriesName = %q", byName["S1E1"].SeriesName)
 	}
-	if a := byName["Alpha"]; a.Played || a.PlayCount != 0 || !a.LastPlayedAt.IsZero() {
-		t.Errorf("Alpha played-state should be empty: %+v", a)
+	// Alpha: alice finished it -- the fixture's one credited item with a
+	// played=1 tick (see UpsertPlayed/people aggregate coverage).
+	if a := byName["Alpha"]; !a.Played || a.PlayCount != 2 || a.LastPlayedAt.IsZero() {
+		t.Errorf("Alpha played-state: %+v", a)
 	}
 	// Bravo: alice 3 + an orphan-user (not in Users) 1 -> SUM 4; still resolves.
 	if b := byName["Bravo"]; !b.Played || b.PlayCount != 4 || b.LastPlayedAt.IsZero() {
@@ -147,5 +150,60 @@ func TestUserPlays_Library(t *testing.T) {
 	// Bravo is a Movies-library title with PlayCount > 0 in the fixture.
 	if bravo, ok := byItem["0000000000000000000000000000000b"]; !ok || bravo.Library != "Movies" {
 		t.Fatalf("bravo userplay library = %+v", bravo)
+	}
+}
+
+func TestLibraryFactsCredits(t *testing.T) {
+	snap, err := defaultQueryLibrary(openFixture(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	byPerson := map[string][]source.Credit{}
+	for _, c := range snap.Credits {
+		byPerson[c.Person] = append(byPerson[c.Person], c)
+	}
+
+	if _, ok := byPerson["Dot Reyes"]; ok {
+		t.Error("Producer leaked into credits; only Actor/GuestStar/Director are read")
+	}
+	// GuestStar folds into actor at read time so the aggregate never sees the
+	// distinction.
+	for _, c := range byPerson["Bo Quill"] {
+		if c.Kind != "actor" {
+			t.Errorf("Bo Quill kind = %q, want actor", c.Kind)
+		}
+	}
+	var kinds []string
+	for _, c := range byPerson["Ada Vex"] {
+		kinds = append(kinds, c.Kind)
+	}
+	if !slices.Contains(kinds, "actor") || !slices.Contains(kinds, "director") {
+		t.Errorf("Ada Vex kinds = %v, want both actor and director", kinds)
+	}
+	for _, c := range snap.Credits {
+		if c.ItemID != source.CanonID(c.ItemID) {
+			t.Errorf("item id %q is not canonical", c.ItemID)
+		}
+	}
+}
+
+func TestLibraryFactsPlayed(t *testing.T) {
+	snap, err := defaultQueryLibrary(openFixture(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snap.Played) == 0 {
+		t.Fatal("no per-user played rows")
+	}
+	seen := map[bool]bool{}
+	for _, p := range snap.Played {
+		seen[p.Played] = true
+		if p.UserID != source.CanonID(p.UserID) || p.ItemID != source.CanonID(p.ItemID) {
+			t.Errorf("non-canonical ids: %+v", p)
+		}
+	}
+	if !seen[true] || !seen[false] {
+		t.Errorf("want both played and unplayed rows, got %v", seen)
 	}
 }

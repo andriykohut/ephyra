@@ -32,6 +32,12 @@ func (f *fakeClient) SystemInfo(context.Context) (jellyfin.ServerInfo, error) {
 func (f *fakeClient) Image(context.Context, string, jellyfin.ImageKind, string) (io.ReadCloser, string, error) {
 	return io.NopCloser(nil), "image/png", nil
 }
+func (f *fakeClient) PersonImage(context.Context, string) (io.ReadCloser, string, error) {
+	return io.NopCloser(nil), "image/png", nil
+}
+func (f *fakeClient) UserImage(context.Context, string) (io.ReadCloser, string, error) {
+	return io.NopCloser(nil), "image/png", nil
+}
 
 // set mutates test state the sessions closure captures, under the same lock the
 // poll goroutine takes in Sessions. Pair it with waitCalls after a tick so the

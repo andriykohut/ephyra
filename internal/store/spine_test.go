@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -154,6 +156,86 @@ func TestAppendPlaybackEvents_Library(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].Library != "Shows" {
 		t.Fatalf("library not refreshed on conflict: %+v", got)
+	}
+}
+
+func mustAt(s string) time.Time {
+	t, err := time.Parse(spineTimeLayout, s)
+	if err != nil {
+		panic(err)
+	}
+	return t
+}
+
+func seedPlaybackEvents(t *testing.T, st *Store, evs []source.PlaybackEvent) {
+	t.Helper()
+	if err := st.AppendPlaybackEvents(context.Background(), evs); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestReadPlaysPagesBackwardsWithoutGapsOrRepeats(t *testing.T) {
+	st := openStore(t)
+	ctx := context.Background()
+	// Two events share a timestamp, which is why the cursor carries rowid too --
+	// an at-only cursor either skips one or serves it twice.
+	seedPlaybackEvents(t, st, []source.PlaybackEvent{
+		{At: mustAt("2026-09-01 10:00:00"), UserID: "u1", ItemID: "a", PlayDurationSec: 60},
+		{At: mustAt("2026-09-01 11:00:00"), UserID: "u1", ItemID: "b", PlayDurationSec: 60},
+		{At: mustAt("2026-09-01 11:00:00"), UserID: "u1", ItemID: "c", PlayDurationSec: 60},
+		{At: mustAt("2026-09-01 12:00:00"), UserID: "u1", ItemID: "d", PlayDurationSec: 60},
+		{At: mustAt("2026-09-01 09:00:00"), UserID: "u2", ItemID: "e", PlayDurationSec: 60},
+	})
+
+	var seen []string
+	var cur *PlayCursor
+	for range 10 {
+		rows, next, err := st.ReadPlays(ctx, "u1", "", cur, 2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, r := range rows {
+			seen = append(seen, r.ItemID)
+		}
+		if next == nil {
+			break
+		}
+		cur = next
+	}
+
+	want := []string{"d", "c", "b", "a"} // newest first; u2's row never appears
+	if !slices.Equal(seen, want) {
+		t.Fatalf("paged %v, want %v", seen, want)
+	}
+}
+
+func TestReadPlaysEndsWithNilCursor(t *testing.T) {
+	st := openStore(t)
+	seedPlaybackEvents(t, st, []source.PlaybackEvent{
+		{At: mustAt("2026-09-01 10:00:00"), UserID: "u1", ItemID: "a", PlayDurationSec: 60},
+	})
+	_, next, err := st.ReadPlays(context.Background(), "u1", "", nil, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next != nil {
+		t.Fatalf("cursor = %+v, want nil at the end of history", next)
+	}
+}
+
+func TestReadPlaysLinkNeedsNoResolution(t *testing.T) {
+	st := openStore(t)
+	st.SetJellyfinLinks("http://jf.example", "sid1")
+	seedPlaybackEvents(t, st, []source.PlaybackEvent{
+		{At: mustAt("2026-09-01 10:00:00"), UserID: "u1", ItemID: "item-1", PlayDurationSec: 60},
+	})
+
+	rows, _, err := st.ReadPlays(context.Background(), "u1", "", nil, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || !strings.Contains(rows[0].JFURL, "item-1") {
+		t.Fatalf("got %+v, want a link built straight from item_id, no dim_jf_ref lookup", rows)
 	}
 }
 

@@ -121,6 +121,38 @@ CREATE TABLE UserData (ItemId TEXT, UserId TEXT, CustomDataKey TEXT,  -- PK all 
   the test.
 - Episode → series linkage is `BaseItems.SeriesId` / `SeriesName` (populated in
   practice).
+- `UserData` is `ON DELETE CASCADE` from `BaseItems`: delete an item in Jellyfin
+  and every user's watched tick for it is gone on the next refresh. `dim_played`
+  (see People, below) is the only place that tick survives.
+
+## People  (Profiles: credits, cast/director charts)
+
+Verified against a live **12.0.3** server and a **10.11.11** DB copy on
+2026-09-13.
+
+```sql
+CREATE TABLE Peoples (Id TEXT, Name TEXT, PersonType TEXT, ...);
+CREATE TABLE PeopleBaseItemMap (ItemId TEXT, PeopleId TEXT, Role TEXT,
+                                ListOrder INT, SortOrder INT);
+```
+
+- `Peoples` holds **one row per `(Name, PersonType)` pair**, not one per person —
+  Taika Waititi (actor, director, writer, ...) is six rows. A credit's type comes
+  from the joined `Peoples` row, not from a label on the person. `Role` on
+  `PeopleBaseItemMap` is the character name.
+- `BaseItems.Id` canonicalised **is** the API's item id — checked by looking up
+  the same GUID both ways and landing on the same film. `Peoples.Id` is **not**
+  the API's person id: `A$AP Rocky` is `EDEE2BFA-5383-41EE-972A-8C42C327F37D` in
+  the DB and `83f0beb8…` over the API, same server. Not an MD5 of the name; no
+  derivation was found, and Ephyra doesn't need one.
+- `GET /Persons/{name}/Images/Primary` returns art keyed by **name**, no id
+  required. About half the people in a real library have none.
+  `GET /Persons?searchTerm=X` is a substring match (`Cranston` returns both
+  *Bryan Cranston* and *Cranston Johnson*), so Ephyra resolves by exact name only.
+- Credit coverage on a real library: Movie 925/925, Episode 5,285/9,794, Series
+  301/303. 58,845 credit rows total, 40,525 of them Actor/GuestStar/Director,
+  across 6,511 items. Low episode coverage is expected — an episode with no
+  credits of its own inherits its parent series'.
 
 ## /Sessions  (Now Playing)
 
@@ -202,8 +234,8 @@ shows its degraded state until a poll succeeds.
 ### `GET /Items/{id}/Images/{kind}`
 
 `kind` is `Primary` or `Backdrop`, with an optional `?tag=`. Ephyra proxies this
-through `/api/now-playing/art/{itemId}` so the API key never reaches the browser;
-the upstream body and `Content-Type` stream straight back, with a small LRU in
+through `/api/art/item/{itemId}` so the API key never reaches the browser; the
+upstream body and `Content-Type` stream straight back, with a small LRU in
 front.
 
 ## Not yet verified

@@ -23,7 +23,7 @@ function resLabel(w: number): string {
 // The art proxy on the Go side holds the API key; the browser only ever sees
 // this relative URL. itemId is validated server-side against ^[0-9a-fA-F-]{8,64}$.
 const artURL = (kind: "primary" | "backdrop", id: string, tag: string) =>
-  `/api/now-playing/art/${id}?kind=${kind}&tag=${encodeURIComponent(tag)}`;
+  `/api/art/item/${id}?kind=${kind}&tag=${encodeURIComponent(tag)}`;
 
 const METHOD_LABEL: Record<string, string> = {
   DirectPlay: "Direct play",

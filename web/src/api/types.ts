@@ -251,3 +251,72 @@ export interface Profile {
   };
   tag_overlap: { user: string; user_name: string; cosine: number; shared: string[] }[];
 }
+
+// --- Profile overview (Plan 5) --- mirrors internal/store's ProfileOverview
+// and internal/api's Overview JSON tags.
+
+export interface ActivityDay {
+  day: string;
+  watch_sec: number;
+}
+export interface ProfilePerson {
+  person: string;
+  kind: string;
+  watch_sec: number;
+  plays: number;
+  distinct_titles: number;
+  watch_sec_played: number;
+  plays_played: number;
+  distinct_titles_played: number;
+  jf_url: string;
+}
+export interface ProfileTopItem {
+  scope: string;
+  item_id: string;
+  name: string;
+  series_name: string;
+  watch_sec: number;
+  plays: number;
+  watch_sec_played: number;
+  plays_played: number;
+  jf_url: string;
+}
+export interface ProfileGenre {
+  key: string;
+  watch_sec: number;
+  plays: number;
+  jf_url: string;
+}
+export interface ProfileOverview {
+  user: { id: string; name: string };
+  since: string;
+  plays: number;
+  watch_sec: number;
+  activity: ActivityDay[];
+  people: ProfilePerson[];
+  items: ProfileTopItem[];
+  genres: ProfileGenre[];
+  now_playing: NowSession | null;
+}
+
+// --- Play history (Plan 5) --- mirrors internal/store's PlayRow/PlayCursor
+// JSON tags (spine.go).
+
+export interface PlayRow {
+  at: string;
+  item_id: string;
+  item_type: string;
+  name: string;
+  series_name: string;
+  play_duration_sec: number;
+  played: boolean;
+  jf_url: string;
+}
+export interface PlayCursor {
+  at: string;
+  row_id: number;
+}
+export interface PlaysPage {
+  plays: PlayRow[];
+  next_cursor: PlayCursor | null;
+}

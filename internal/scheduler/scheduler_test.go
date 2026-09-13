@@ -257,6 +257,40 @@ func TestRunLibraryOnce_PerLibraryAggregates(t *testing.T) {
 	}
 }
 
+func TestLibraryJobWritesDimensions(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir()+"/s.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	m := source.LibraryItem{ID: "m1", Name: "Alpha", Type: "movie", SizeBytes: 20, Library: "Movies"}
+	fs := &fakeSource{snap: source.LibrarySnapshot{
+		Items:   []source.LibraryItem{m},
+		Credits: []source.Credit{{ItemID: "m1", Person: "Ada Vex", Kind: "actor"}},
+		Played:  []source.UserItemPlayed{{UserID: "u1", ItemID: "m1", Played: true}},
+	}}
+	ts := time.Unix(1000, 0)
+	fs.mtime.Store(&ts)
+	sc := New(st, fs, config.Config{RefreshLibrary: time.Hour, RefreshWatch: time.Hour}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	if err := sc.RunLibraryOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	var credits, played int
+	if err := st.DB().QueryRow(`SELECT count(*) FROM dim_credit`).Scan(&credits); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.DB().QueryRow(`SELECT count(*) FROM dim_played`).Scan(&played); err != nil {
+		t.Fatal(err)
+	}
+	if credits == 0 || played == 0 {
+		t.Fatalf("dim_credit=%d dim_played=%d, want both non-zero", credits, played)
+	}
+}
+
 func TestRunWatchOnce_PopulatesWatchTables(t *testing.T) {
 	ctx := context.Background()
 	st, err := store.Open(ctx, t.TempDir()+"/s.db")
@@ -383,11 +417,12 @@ func TestRunWatchOnce_EmptySpineBypassesMtimeSkip(t *testing.T) {
 }
 
 // TestRunWatchOnce_MigrationMtimeResetForcesFullRun simulates an upgrade
-// across migration 0005: refresh_meta already recorded the current mtime
-// (last run was "ok" before the upgrade), and the spine is non-empty (so the
-// pre-existing spineEmpty bypass does not kick in and mask the bug). Without
-// migration 0005 blanking source_mtime, this run would skip forever and the
-// per-library agg_watch_* tables added by that migration would stay empty.
+// across migrations 0005 and 0007: refresh_meta already recorded the current
+// mtime (last run was "ok" before the upgrade), and the spine is non-empty (so
+// the pre-existing spineEmpty bypass does not kick in and mask the bug).
+// Without the migrations blanking source_mtime, this run would skip forever
+// and the per-library agg_watch_* tables plus 0007's agg_profile_people would
+// stay empty.
 func TestRunWatchOnce_MigrationMtimeResetForcesFullRun(t *testing.T) {
 	ctx := context.Background()
 	st, err := store.Open(ctx, t.TempDir()+"/s.db")
@@ -418,6 +453,12 @@ func TestRunWatchOnce_MigrationMtimeResetForcesFullRun(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	if err := st.UpsertCredits(ctx, []source.Credit{
+		{ItemID: "m1", Person: "Ada Vex", Kind: "actor"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
 	fs := &fakeSource{events: []source.PlaybackEvent{
 		{At: time.Date(2025, 1, 6, 20, 0, 0, 0, time.UTC), UserID: "u1", ItemID: "m1", ItemType: "movie", Method: "DirectPlay", PlayDurationSec: 3600, Library: "Movies"},
 	}}
@@ -431,11 +472,15 @@ func TestRunWatchOnce_MigrationMtimeResetForcesFullRun(t *testing.T) {
 	if !ok || m.Skipped {
 		t.Fatalf("expected a full run, not a skip: %+v", m)
 	}
-	var daily, heat int
+	var daily, heat, people int
 	st.DB().QueryRowContext(ctx, `SELECT count(*) FROM watch_events_daily`).Scan(&daily)
 	st.DB().QueryRowContext(ctx, `SELECT count(*) FROM agg_watch_heatmap`).Scan(&heat)
+	st.DB().QueryRowContext(ctx, `SELECT count(*) FROM agg_profile_people`).Scan(&people)
 	if daily == 0 || heat == 0 {
 		t.Fatalf("watch aggregates not populated: daily=%d heat=%d", daily, heat)
+	}
+	if people == 0 {
+		t.Fatal("agg_profile_people not populated by the forced full run (migration 0007)")
 	}
 }
 
@@ -461,9 +506,11 @@ func TestRunLibraryOnce_MigrationMtimeResetForcesFullRun(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	fs := &fakeSource{snap: source.LibrarySnapshot{Items: []source.LibraryItem{
-		{Name: "M", Type: "movie", SizeBytes: 1, RuntimeSec: 1, Year: 2020, Library: "Movies", Container: "mkv", Width: 1920, HasVideo: true},
-	}}}
+	fs := &fakeSource{snap: source.LibrarySnapshot{
+		Items:   []source.LibraryItem{{ID: "m1", Name: "M", Type: "movie", SizeBytes: 1, RuntimeSec: 1, Year: 2020, Library: "Movies", Container: "mkv", Width: 1920, HasVideo: true}},
+		Credits: []source.Credit{{ItemID: "m1", Person: "Ada Vex", Kind: "actor"}},
+		Played:  []source.UserItemPlayed{{UserID: "u1", ItemID: "m1", Played: true}},
+	}}
 	fs.mtime.Store(&mt) // matches the pre-upgrade mtime -- would skip if not for the reset
 	sc := New(st, fs, config.Config{RefreshLibrary: time.Hour, RefreshWatch: time.Hour}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
@@ -480,6 +527,12 @@ func TestRunLibraryOnce_MigrationMtimeResetForcesFullRun(t *testing.T) {
 	ov, _ := st.ReadLibraryOverview(ctx, "")
 	if ov.Totals.Items != 1 {
 		t.Fatalf("overview not populated: %+v", ov.Totals)
+	}
+	var credits, played int
+	st.DB().QueryRowContext(ctx, `SELECT count(*) FROM dim_credit`).Scan(&credits)
+	st.DB().QueryRowContext(ctx, `SELECT count(*) FROM dim_played`).Scan(&played)
+	if credits == 0 || played == 0 {
+		t.Fatalf("dim_credit=%d dim_played=%d not populated by the forced full run (migration 0007)", credits, played)
 	}
 }
 
@@ -639,5 +692,49 @@ func TestRunWatchOnce_PerLibraryProfiles(t *testing.T) {
 	}
 	if shows.Summary.WatchSec != 0 {
 		t.Fatalf("alice has no Shows plays, want 0, got %d", shows.Summary.WatchSec)
+	}
+}
+
+func TestWatchJobWritesPeopleAggregates(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir()+"/s.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	if err := st.UpsertCredits(ctx, []source.Credit{
+		{ItemID: "m1", Person: "Ada Vex", Kind: "actor"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	fs := &fakeSource{events: []source.PlaybackEvent{
+		{At: time.Date(2025, 1, 6, 20, 0, 0, 0, time.UTC), UserID: "u1", ItemID: "m1", ItemType: "movie",
+			Method: "DirectPlay", PlayDurationSec: 6000, ItemRuntimeSec: 6000, ItemYear: 1994,
+			ItemGenres: []string{"Drama"}},
+	}}
+	mt := time.Unix(1000, 0)
+	fs.mtime.Store(&mt)
+	sc := New(st, fs, config.Config{RefreshLibrary: time.Hour, RefreshWatch: time.Hour}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	if err := sc.RunWatchOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	var n int
+	if err := st.DB().QueryRow(`SELECT count(*) FROM agg_profile_people`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n == 0 {
+		t.Fatal("no people rows after a watch run")
+	}
+	var libs int
+	if err := st.DB().QueryRow(
+		`SELECT count(DISTINCT library) FROM agg_profile_people`).Scan(&libs); err != nil {
+		t.Fatal(err)
+	}
+	if libs < 1 {
+		t.Fatal("expected at least the '' all-libraries scope")
 	}
 }
