@@ -11,14 +11,14 @@
     "lint": "biome ci ."
   },
   "dependencies": {
-    "@tanstack/react-query": "^5.102.8",
-    "@tanstack/react-router": "^1.170.34",
+    "@tanstack/react-query": "^5.103.1",
+    "@tanstack/react-router": "^1.170.38",
     "clsx": "^2.1.1",
     "echarts": "^6.1.0",
-    "lucide-react": "^1.44.0",
+    "lucide-react": "^1.47.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "tailwind-merge": "^3.6.0"
+    "tailwind-merge": "^3.7.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.13",
