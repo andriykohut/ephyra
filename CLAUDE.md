@@ -13,7 +13,7 @@ design specs and implementation plans live in `docs/superpowers/`.
 
 ## Commands
 
-Go (module `github.com/andriykohut/ephyra`, floor `go 1.25`):
+Go (module `github.com/andriykohut/ephyra`, floor `go 1.26`):
 
 - `make test` → `CGO_ENABLED=0 go test ./...`
 - One package / one test: `go test ./internal/aggregate/ -run TestLibraryAggregates -v`
